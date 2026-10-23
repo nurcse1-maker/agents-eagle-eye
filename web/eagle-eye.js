@@ -64,6 +64,7 @@
   };
   var FINISHED = new Set(["completed", "stopped", "offline"]);
   var LIVE = new Set(["running", "thinking", "waiting"]);
+  var HALTED = new Set(["stopped", "offline"]);
   var NEXT_STATUS = {
     running: ["thinking", "completed", "waiting", "running"],
     thinking: ["running", "completed"],
@@ -127,12 +128,13 @@
   var DESIGN_H = 1536;
   var DESIGN_CX = 512;
   var DESIGN_CY = 755;
-  var CENTER_R = 135;
+  var ORB_LAYOUT_R = 135;
+  var ORB_SCALE = 0.7;
+  var CENTER_R = ORB_LAYOUT_R * ORB_SCALE;
   var LAUNCH_CHARGE = 0.55;
   var LAUNCH_FLY = 0.8;
   var LAUNCH = LAUNCH_CHARGE + LAUNCH_FLY;
   var NOVA_CHARGE = 1.15;
-  var NOVA_AFTER = 3.6;
   var FONT = 'Inter, "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif';
   var TAU = Math.PI * 2;
   var clamp = (v, a = 0, b = 1) => v < a ? a : v > b ? b : v;
@@ -242,23 +244,8 @@
     pencil: new Path2D("M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z M15 5l4 4"),
     db: new Path2D("M12 8c4.4 0 8-1.3 8-3s-3.6-3-8-3-8 1.3-8 3 3.6 3 8 3z M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5 M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"),
     box: new Path2D("M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"),
-    gear: gearPath(),
-    brain: [
-      "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z",
-      "M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z",
-      "M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4",
-      "M17.599 6.5a3 3 0 0 0 .399-1.375",
-      "M6.003 5.125A3 3 0 0 0 6.401 6.5",
-      "M3.477 10.896a4 4 0 0 1 .585-.396",
-      "M19.938 10.5a4 4 0 0 1 .585.396",
-      "M6 18a4 4 0 0 1-1.967-.516",
-      "M19.967 17.484A4 4 0 0 1 18 18"
-    ].map((d) => new Path2D(d))
+    gear: gearPath()
   };
-  function drawBrain(ctx) {
-    for (const p of P.brain)
-      ctx.stroke(p);
-  }
   var widthCache = new Map;
   function measure(ctx, font, str) {
     const key = font + "|" + str;
@@ -465,6 +452,7 @@
         charging: false,
         novaS: 1,
         novaL: 0,
+        fade: HALTED.has(spec.status) ? 0 : 1,
         dragging: false,
         grabX: 0,
         grabY: 0
@@ -483,7 +471,7 @@
         a.hy = cyL + (a.spec.y - DESIGN_CY) * stretchY;
         const lw = Math.max(measure(ctx, `600 24px ${FONT}`, a.spec.name), 175);
         if (a.hx > cxL)
-          a.hx = Math.min(a.hx, Math.max(cxL + CENTER_R + a.r + 20, LW - 8 - a.r - 30 - lw));
+          a.hx = Math.min(a.hx, Math.max(cxL + ORB_LAYOUT_R + a.r + 20, LW - 8 - a.r - 30 - lw));
         if (snap) {
           a.x = a.hx;
           a.y = a.hy;
@@ -544,26 +532,26 @@
           draw();
       }
     }
-    function addRipple(x, y, r0, r1, col, max = 1.2, w = 2.5) {
+    function addRipple(x, y, r0, r1, col2, max = 1.2, w = 2.5) {
       if (ripples.length > 60)
         ripples.shift();
-      ripples.push({ x, y, r0, r1, life: 0, max, col, w });
+      ripples.push({ x, y, r0, r1, life: 0, max, col: col2, w });
     }
-    function burst(x, y, col, n, speed = 60) {
+    function burst(x, y, col2, n, speed = 60) {
       for (let i = 0;i < n && sparks.length < 700; i++) {
         const a = rnd(0, TAU), sp = rnd(0.2, 1) * speed;
-        sparks.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: rnd(0.5, 1.3), size: rnd(0.8, 2.2), col });
+        sparks.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: rnd(0.5, 1.3), size: rnd(0.8, 2.2), col: col2 });
       }
     }
     const fxList = [];
     let shake = 0;
-    const WHITE = [255, 255, 255], WARM = [255, 196, 140];
-    function sparkAt(x, y, vx, vy, max, size, col) {
+    const WHITE = [255, 255, 255];
+    function sparkAt(x, y, vx, vy, max, size, col2) {
       if (sparks.length < 900)
-        sparks.push({ x, y, vx, vy, life: 0, max, size, col });
+        sparks.push({ x, y, vx, vy, life: 0, max, size, col: col2 });
     }
     function newFx(kind, a, intro = false) {
-      const f = { kind, a, t: 0, intro, acc: 0, fired: false, arrived: false, blasted: false, hx: 0, hy: 0, u: 0, trail: [], rays: [], clumps: [] };
+      const f = { kind, a, t: 0, intro, acc: 0, arrived: false, hx: 0, hy: 0, u: 0, trail: [] };
       fxList.push(f);
       return f;
     }
@@ -573,11 +561,7 @@
     function startNova(a) {
       if (fxList.some((f) => f.kind === "nova" && f.a === a))
         return;
-      const f = newFx("nova", a);
-      for (let i = 0;i < 18; i++)
-        f.rays.push({ ang: rnd(0, TAU), len: rnd(180, 460), w: rnd(1, 3.2) });
-      for (let i = 0;i < 26; i++)
-        f.clumps.push({ ang: rnd(0, TAU), dist: rnd(120, 360), size: rnd(14, 40), hot: Math.random() < 0.4, dir: Math.random() < 0.5 ? -1 : 1 });
+      newFx("nova", a);
     }
     function impact(a) {
       const c = lighten(a.accent, 0.25);
@@ -603,11 +587,6 @@
         if (f.kind === "launch") {
           const ang = Math.atan2(a.y - center.y, a.x - center.x);
           const rx = center.x + Math.cos(ang) * CENTER_R, ry = center.y + Math.sin(ang) * CENTER_R;
-          if (!f.fired) {
-            f.fired = true;
-            addRipple(center.x, center.y, CENTER_R * 0.98, CENTER_R + 300, lighten(a.accent, 0.2), 1.5, 4);
-            shockwave(center.x, center.y, 45);
-          }
           if (k < LAUNCH_CHARGE) {
             const e = k / LAUNCH_CHARGE;
             center.flash = Math.max(center.flash, 0.55 * e);
@@ -649,34 +628,18 @@
           if (k < NOVA_CHARGE) {
             const e = k / NOVA_CHARGE, e2 = e * e;
             a.charging = true;
-            a.novaS = 1 - 0.26 * e2 + Math.sin(k * 70) * 0.014 * e2 * motion;
-            a.novaL = 0.2 + 1.4 * e2;
+            a.novaS = 1 - 0.9 * e2;
+            a.novaL = 0.3 * (0.2 + 1.4 * e2);
             f.acc += dt * (40 + 220 * e2);
             while (f.acc >= 1) {
               f.acc -= 1;
               const an = rnd(0, TAU), d = a.r * rnd(1.8, 3.4);
               sparkAt(a.x + Math.cos(an) * d, a.y + Math.sin(an) * d, -Math.cos(an) * 280, -Math.sin(an) * 280, rnd(0.3, 0.6), rnd(0.9, 1.8), Math.random() < 0.5 ? WHITE : lighten(a.accent, 0.4));
             }
-          } else if (!f.blasted) {
-            f.blasted = true;
+          } else {
             a.charging = false;
-            a.novaS = 1.45;
-            a.novaL = 2.4;
-            a.flash = 1;
-            a.hit = 1.4;
-            shake = Math.max(shake, 16 * motion);
-            shockwave(a.x, a.y, 210);
-            addRipple(a.x, a.y, a.r * 0.6, a.r + 520, WHITE, 2.6, 7);
-            addRipple(a.x, a.y, a.r * 0.8, a.r + 360, lighten(a.accent, 0.3), 2, 4);
-            addRipple(a.x, a.y, a.r, a.r + 220, WARM, 1.4, 3);
-            for (let n = 0;n < 120; n++) {
-              const an = rnd(0, TAU), sp = Math.pow(Math.random(), 0.6) * 560 + 60;
-              const col = n % 4 === 0 ? WHITE : n % 4 === 1 ? WARM : lighten(a.accent, 0.3);
-              sparkAt(a.x + Math.cos(an) * a.r * 0.5, a.y + Math.sin(an) * a.r * 0.5, Math.cos(an) * sp, Math.sin(an) * sp, rnd(0.9, 2.4), rnd(1, 3), col);
-            }
-          }
-          if (k >= NOVA_CHARGE + NOVA_AFTER) {
-            a.charging = false;
+            a.novaS = 1;
+            a.novaL = 0;
             fxList.splice(i, 1);
           }
         }
@@ -724,54 +687,8 @@
         } else if (k < NOVA_CHARGE) {
           const e = k / NOVA_CHARGE, e2 = e * e;
           const hot = mix(a.accent, WHITE, 0.5);
-          drawGlow(ctx, a.x, a.y, a.r * (1.8 + 2.2 * e2), hot, 0.3 + 0.6 * e2);
-          drawGlow(ctx, a.x, a.y, a.r * (0.8 + e), WHITE, e2 * 0.9);
-          ctx.lineWidth = 2;
-          for (let j = 0;j < 3; j++) {
-            const ph = (e * 1.6 + j / 3) % 1;
-            ctx.strokeStyle = rgba(hot, (1 - ph) * 0.5 * e);
-            ctx.beginPath();
-            ctx.arc(a.x, a.y, a.r * (3.2 - 2.4 * ph), 0, TAU);
-            ctx.stroke();
-          }
-        } else {
-          const tb = k - NOVA_CHARGE;
-          const cool = mix(a.accent, WHITE, 0.3);
-          if (tb < 0.8) {
-            const q = 1 - tb / 0.8;
-            drawGlow(ctx, a.x, a.y, a.r * (6 + tb * 10), [255, 250, 240], q * q);
-            drawGlow(ctx, a.x, a.y, Math.max(LW, LH) * 0.9, cool, 0.35 * q * q);
-          }
-          const ks = clamp(tb / 3);
-          for (const [sc, al] of [[1, 0.22], [0.7, 0.14]]) {
-            ctx.strokeStyle = rgba(cool, al * Math.pow(1 - ks, 1.5));
-            ctx.lineWidth = 18 * (1 - ks) + 2;
-            ctx.beginPath();
-            ctx.arc(a.x, a.y, easeOutCubic(ks) * (a.r + 430) * sc, 0, TAU);
-            ctx.stroke();
-          }
-          ctx.lineCap = "round";
-          for (const r of f.rays) {
-            const kr = clamp(tb / 1.6), er = easeOutCubic(kr);
-            const al = Math.pow(1 - kr, 1.5) * 0.8;
-            if (al < 0.01)
-              continue;
-            const c = Math.cos(r.ang), sn = Math.sin(r.ang);
-            ctx.strokeStyle = rgba(WHITE, al);
-            ctx.lineWidth = r.w * (1 - kr);
-            ctx.beginPath();
-            ctx.moveTo(a.x + c * (a.r * 0.5 + er * r.len * 0.45), a.y + sn * (a.r * 0.5 + er * r.len * 0.45));
-            ctx.lineTo(a.x + c * (a.r * 0.7 + er * r.len), a.y + sn * (a.r * 0.7 + er * r.len));
-            ctx.stroke();
-          }
-          const kc = clamp(tb / 3.2);
-          const alc = 0.5 * Math.pow(1 - kc, 1.4);
-          if (alc > 0.01) {
-            for (const c of f.clumps) {
-              const d = easeOutCubic(kc) * c.dist + a.r * 0.5, an = c.ang + kc * 0.5 * c.dir;
-              drawGlow(ctx, a.x + Math.cos(an) * d, a.y + Math.sin(an) * d, c.size * (0.6 + kc * 0.9), c.hot ? WARM : cool, alc);
-            }
-          }
+          drawGlow(ctx, a.x, a.y, a.r * (1.8 + 2.2 * e2), hot, (0.3 + 0.6 * e2) * 0.3);
+          drawGlow(ctx, a.x, a.y, a.r * (0.8 + e), WHITE, e2 * 0.9 * 0.3);
         }
       }
       ctx.globalCompositeOperation = "source-over";
@@ -825,6 +742,8 @@
         startNova(a);
         return;
       }
+      if (HALTED.has(s))
+        return;
       a.flash = 1;
       pulseAgent(a, wake ? 12 : 5);
       burst(a.x, a.y, STATUS[s].dot, wake ? 26 : 12, 90);
@@ -832,7 +751,7 @@
     }
     function update(dt) {
       const time = t;
-      center.spawn.target = time > 0.05 ? 1 : 0;
+      center.spawn.target = time > 0.05 && agents.some((a) => !FINISHED.has(a.spec.status)) ? 1 : 0;
       center.spawn.step(dt);
       let ctx0 = 0, cty0 = 0;
       if (ptr.active) {
@@ -856,7 +775,7 @@
       center.pulseT -= dt;
       if (center.pulseT <= 0) {
         center.pulseT = 2.4 - Math.min(1.2, active * 0.1);
-        addRipple(center.x, center.y, CENTER_R * 0.98, CENTER_R + 170, [110, 150, 255], 2.4, 3);
+        addRipple(center.x, center.y, CENTER_R * 0.98, CENTER_R + 170 * ORB_SCALE, [110, 150, 255], 2.4, 3);
       }
       center.shimmerT += dt;
       for (const a of agents) {
@@ -880,6 +799,7 @@
         a.rest = damp(a.rest, FINISHED.has(a.spec.status) && !a.charging ? 1 : 0, 3, dt);
         a.novaS = damp(a.novaS, 1, 4, dt);
         a.novaL = damp(a.novaL, 0, 1.6, dt);
+        a.fade = damp(a.fade, HALTED.has(a.spec.status) ? 0 : 1, 1.5, dt);
         a.r = a.baseR * lerp(0.68, 1.1, clamp(a.power)) * lerp(1, 0.52, a.rest);
         a.flow = damp(a.flow, cfg.flow, 2.6, dt);
         a.spin = damp(a.spin, cfg.spin, 2.6, dt);
@@ -890,7 +810,7 @@
         a.flash = damp(a.flash, 0, 2.2, dt);
         a.tokFlash = damp(a.tokFlash, 0, 3.2, dt);
         a.timeFlash = damp(a.timeFlash, 0, 5, dt);
-        a.grow = Math.max(clamp((time - (a.spawnAt + 0.2)) / 1.3), a.launchGrow);
+        a.grow = FINISHED.has(a.spec.status) && !a.charging && a.launchGrow >= 1 ? damp(a.grow, 0, 3, dt) : Math.max(clamp((time - (a.spawnAt + 0.2)) / 1.3), a.launchGrow);
         a.introCount = clamp((time - a.spawnAt) / 2);
         if (cfg.tokenRate > 0) {
           a.tokens += cfg.tokenRate * dt * (0.6 + Math.random() * 0.8);
@@ -1564,15 +1484,15 @@
         const s = a.strands[k.si];
         if (k.t > a.grow + 0.02)
           continue;
-        const col = k.dir > 0 ? lighten(a.col, 0.35) : mix(lighten(a.col, 0.2), [200, 160, 255], 0.5);
+        const col2 = k.dir > 0 ? lighten(a.col, 0.35) : mix(lighten(a.col, 0.2), [200, 160, 255], 0.5);
         const vis = clamp(a.power * 1.2 + 0.1);
         for (let q = 5;q >= 1; q--) {
           const tt = clamp(k.t - k.dir * q * 0.012);
           bez(s.pts, tt, tmp);
-          drawGlow(ctx, tmp[0], tmp[1], 5 * k.size * (1 - q * 0.12), col, (0.5 - q * 0.08) * vis);
+          drawGlow(ctx, tmp[0], tmp[1], 5 * k.size * (1 - q * 0.12), col2, (0.5 - q * 0.08) * vis);
         }
         bez(s.pts, clamp(k.t), tmp);
-        drawGlow(ctx, tmp[0], tmp[1], 14 * k.size, col, 0.75 * vis);
+        drawGlow(ctx, tmp[0], tmp[1], 14 * k.size, col2, 0.75 * vis);
         ctx.globalAlpha = vis;
         ctx.fillStyle = "#ffffff";
         ctx.beginPath();
@@ -1593,7 +1513,7 @@
           ctx.lineTo(x, y);
       }
     }
-    function strokeIcon(fn, col, size, time, act, alpha) {
+    function strokeIcon(fn, col2, size, time, act, alpha) {
       const sc = size / 24;
       ctx.save();
       ctx.scale(sc, sc);
@@ -1601,21 +1521,21 @@
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       ctx.globalCompositeOperation = "lighter";
-      ctx.strokeStyle = rgba(col, 0.28 * alpha);
+      ctx.strokeStyle = rgba(col2, 0.28 * alpha);
       ctx.lineWidth = 4.6;
       fn(ctx, time, act);
-      ctx.strokeStyle = rgba(lighten(col, 0.3), alpha);
+      ctx.strokeStyle = rgba(lighten(col2, 0.3), alpha);
       ctx.lineWidth = 1.75;
       fn(ctx, time, act);
       ctx.restore();
     }
     function drawNode(a, time) {
       const sp = a.spawn.x;
-      if (sp < 0.01)
+      if (sp < 0.01 || a.fade <= 0.002)
         return;
       const sc = sp * a.hover.x * a.novaS;
       const r = a.r;
-      const col = a.col;
+      const col2 = a.col;
       const act = clamp(a.power);
       const breath = 0.8 + 0.2 * Math.sin(time * 1.7 + a.phase);
       const light = clamp(a.hit * 0.5 + a.flash * 0.6 + (a.hover.x - 1) * 4 + a.novaL * 0.8);
@@ -1623,36 +1543,36 @@
       ctx.translate(a.x, a.y);
       ctx.scale(sc, sc);
       ctx.globalCompositeOperation = "lighter";
-      drawGlow(ctx, 0, 0, r * 2.4, col, (0.5 * act + 0.12) * breath + light * 0.3);
+      drawGlow(ctx, 0, 0, r * 2.4, col2, ((0.5 * act + 0.12) * breath + light * 0.3) * a.fade);
       ctx.globalCompositeOperation = "source-over";
       const body = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
-      body.addColorStop(0, "rgba(10,14,46,0.93)");
-      body.addColorStop(0.72, "rgba(5,8,30,0.93)");
-      body.addColorStop(1, rgba(col, 0.2 + 0.2 * act));
+      body.addColorStop(0, rgba([10, 14, 46], 0.93 * a.fade));
+      body.addColorStop(0.72, rgba([5, 8, 30], 0.93 * a.fade));
+      body.addColorStop(1, rgba(col2, (0.2 + 0.2 * act) * a.fade));
       ctx.fillStyle = body;
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, TAU);
       ctx.fill();
       ctx.globalCompositeOperation = "lighter";
-      const ringCol = lighten(col, 0.18 + light * 0.4);
+      const ringCol = lighten(col2, 0.18 + light * 0.4);
       const ra = 0.25 + 0.75 * act;
       ctx.lineWidth = 15;
-      ctx.strokeStyle = rgba(col, 0.1 * ra * breath);
+      ctx.strokeStyle = rgba(col2, 0.1 * ra * breath * a.fade);
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, TAU);
       ctx.stroke();
       ctx.lineWidth = 8;
-      ctx.strokeStyle = rgba(col, 0.28 * ra + light * 0.2);
+      ctx.strokeStyle = rgba(col2, (0.28 * ra + light * 0.2) * a.fade);
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, TAU);
       ctx.stroke();
       ctx.lineWidth = 3.2;
-      ctx.strokeStyle = rgba(ringCol, 0.35 + 0.65 * ra);
+      ctx.strokeStyle = rgba(ringCol, (0.35 + 0.65 * ra) * a.fade);
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, TAU);
       ctx.stroke();
       ctx.lineWidth = 1.4;
-      ctx.strokeStyle = rgba(col, 0.38 * ra);
+      ctx.strokeStyle = rgba(col2, 0.38 * ra * a.fade);
       ctx.beginPath();
       ctx.arc(0, 0, r - 9, 0, TAU);
       ctx.stroke();
@@ -1663,7 +1583,7 @@
           const n = st === "thinking" ? 2 : 3;
           const sw = st === "thinking" ? 1.1 : 0.62;
           ctx.lineWidth = 2.2;
-          ctx.strokeStyle = rgba(lighten(col, 0.3), 0.75 * act);
+          ctx.strokeStyle = rgba(lighten(col2, 0.3), 0.75 * act * a.fade);
           for (let i = 0;i < n; i++) {
             const a0 = time * a.spin * (st === "thinking" ? 2.6 : 0.9) * (i % 2 ? -1 : 1) + i * TAU / n;
             ctx.beginPath();
@@ -1673,13 +1593,13 @@
           for (let i = 0;i < 3; i++) {
             const an = time * (0.8 + i * 0.35) * (i % 2 ? -1 : 1) + a.phase + i * 2.1;
             const rr = r + 22 + i * 5;
-            drawGlow(ctx, Math.cos(an) * rr, Math.sin(an) * rr, 6, col, 0.9 * act);
+            drawGlow(ctx, Math.cos(an) * rr, Math.sin(an) * rr, 6, col2, 0.9 * act * a.fade);
           }
         } else if (st === "waiting") {
           ctx.setLineDash([2, 9]);
           ctx.lineDashOffset = -time * 8;
           ctx.lineWidth = 2.4;
-          ctx.strokeStyle = rgba(col, 0.6 * (0.5 + 0.5 * Math.sin(time * 2.2)));
+          ctx.strokeStyle = rgba(col2, 0.6 * (0.5 + 0.5 * Math.sin(time * 2.2)) * a.fade);
           ctx.beginPath();
           ctx.arc(0, 0, r + 12, 0, TAU);
           ctx.stroke();
@@ -1687,7 +1607,7 @@
         } else if (st === "idle") {
           const ph = (time * (st === "idle" ? 0.35 : 0.5) + a.phase) % 1;
           ctx.lineWidth = 2;
-          ctx.strokeStyle = rgba(col, (1 - ph) * 0.5);
+          ctx.strokeStyle = rgba(col2, (1 - ph) * 0.5 * a.fade);
           ctx.beginPath();
           ctx.arc(0, 0, r + 4 + ph * 34, 0, TAU);
           ctx.stroke();
@@ -1697,7 +1617,7 @@
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
         ctx.lineWidth = 2.2;
-        ctx.strokeStyle = rgba(lighten(col, 0.35), 0.75 * a.rest);
+        ctx.strokeStyle = rgba(lighten(col2, 0.35), 0.75 * a.rest * a.fade);
         ctx.beginPath();
         ctx.moveTo(-r * 0.34, r * 0.02);
         ctx.lineTo(-r * 0.1, r * 0.28);
@@ -1705,16 +1625,16 @@
         ctx.stroke();
       }
       const core = (0.18 + 0.5 * act) * (0.85 + 0.15 * Math.sin(time * 2.4 + a.phase)) + light * 0.3;
-      drawGlow(ctx, 0, 0, r * 0.62, lighten(col, 0.2), core);
+      drawGlow(ctx, 0, 0, r * 0.62, lighten(col2, 0.2), core * a.fade);
       ctx.restore();
       ctx.globalCompositeOperation = "source-over";
     }
-    function drawStatIcon(kind, x, y, col, time, live, alpha) {
+    function drawStatIcon(kind, x, y, col2, time, live, alpha) {
       ctx.save();
       ctx.translate(x, y);
       ctx.lineCap = "round";
       if (kind === "tok") {
-        ctx.fillStyle = rgba(col, alpha);
+        ctx.fillStyle = rgba(col2, alpha);
         const hs = [9, 16, 12];
         for (let i = 0;i < 3; i++) {
           const h = live ? hs[i] * (0.78 + 0.22 * Math.sin(time * 3 + i * 1.5)) : hs[i];
@@ -1724,7 +1644,7 @@
           ctx.fill();
         }
       } else {
-        ctx.strokeStyle = rgba(col, alpha);
+        ctx.strokeStyle = rgba(col2, alpha);
         ctx.lineWidth = 2.1;
         ctx.beginPath();
         ctx.arc(0, 1.5, 6.8, 0, TAU);
@@ -1743,7 +1663,7 @@
     }
     function drawLabel(a, time) {
       const peek = clamp((a.hover.x - 1) / 0.07);
-      const vis = clamp((a.spawn.x - 0.45) * 2.2) * (1 - a.rest * (1 - peek));
+      const vis = clamp((a.spawn.x - 0.45) * 2.2) * (1 - a.rest * (1 - peek)) * a.fade;
       if (vis <= 0.01)
         return;
       const d = a.detail;
@@ -1871,25 +1791,25 @@
         rim = rgba([90, 150, 255], 1);
       }
       ctx.strokeStyle = rim;
-      ctx.lineWidth = 26;
+      ctx.lineWidth = 26 * ORB_SCALE;
       ctx.globalAlpha = 0.14 + beat * 0.08;
       ctx.beginPath();
       ctx.arc(0, 0, R, 0, TAU);
       ctx.stroke();
-      ctx.lineWidth = 13;
+      ctx.lineWidth = 13 * ORB_SCALE;
       ctx.globalAlpha = 0.34;
       ctx.beginPath();
       ctx.arc(0, 0, R, 0, TAU);
       ctx.stroke();
-      ctx.lineWidth = 5;
+      ctx.lineWidth = 5 * ORB_SCALE;
       ctx.globalAlpha = 1;
       ctx.beginPath();
       ctx.arc(0, 0, R, 0, TAU);
       ctx.stroke();
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = 1.6 * ORB_SCALE;
       ctx.globalAlpha = 0.55;
       ctx.beginPath();
-      ctx.arc(0, 0, R - 15, 0, TAU);
+      ctx.arc(0, 0, R - 15 * ORB_SCALE, 0, TAU);
       ctx.stroke();
       ctx.globalAlpha = 1;
       const ticks = 90;
@@ -1898,53 +1818,31 @@
         const wave = 0.5 + 0.5 * Math.sin(an * 3 - time * 2.2);
         ctx.globalAlpha = 0.1 + wave * 0.55;
         ctx.fillStyle = "#9fc4ff";
-        const rr = R + 17 + wave * 3;
+        const rr = R + (17 + wave * 3) * ORB_SCALE;
         ctx.beginPath();
-        ctx.arc(Math.cos(an) * rr, Math.sin(an) * rr, 1.1 + wave * 0.9, 0, TAU);
+        ctx.arc(Math.cos(an) * rr, Math.sin(an) * rr, (1.1 + wave * 0.9) * ORB_SCALE, 0, TAU);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
       for (let i = 0;i < 4; i++) {
         const sp2 = 0.55 / Math.pow(1 + i * 0.35, 1.5);
         const an = time * sp2 * (i % 2 ? -1 : 1) * motion + i * 1.7;
-        const rr = R + 40 + i * 14;
+        const rr = R + (40 + i * 14) * ORB_SCALE;
         const mc = halo[i][0];
-        drawGlow(ctx, Math.cos(an) * rr, Math.sin(an) * rr, 10, mc, 0.9);
+        drawGlow(ctx, Math.cos(an) * rr, Math.sin(an) * rr, 10 * ORB_SCALE, mc, 0.9);
         ctx.fillStyle = "#fff";
         ctx.globalAlpha = 0.9;
         ctx.beginPath();
-        ctx.arc(Math.cos(an) * rr, Math.sin(an) * rr, 1.6, 0, TAU);
+        ctx.arc(Math.cos(an) * rr, Math.sin(an) * rr, 1.6 * ORB_SCALE, 0, TAU);
         ctx.fill();
         ctx.globalAlpha = 1;
       }
-      const bs = R * 0.64 / 24;
-      ctx.save();
-      ctx.translate(0, -R * 0.12);
-      ctx.scale(bs * (1 + beat * 0.03), bs * (1 + beat * 0.03));
-      ctx.translate(-12, -12);
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      const bc = [52, 156, 255];
-      drawGlow(ctx, 12, 12, 26, bc, 0.4 + beat * 0.3);
-      ctx.strokeStyle = rgba(bc, 0.3);
-      ctx.lineWidth = 3.6;
-      drawBrain(ctx);
-      ctx.strokeStyle = rgba(lighten(bc, 0.25), 0.95);
-      ctx.lineWidth = 1.35;
-      drawBrain(ctx);
-      ctx.setLineDash([5, 34]);
-      ctx.lineDashOffset = -time * 14;
-      ctx.strokeStyle = "rgba(255,255,255,0.95)";
-      ctx.lineWidth = 1.1;
-      drawBrain(ctx);
-      ctx.setLineDash([]);
-      ctx.restore();
       ctx.globalCompositeOperation = "source-over";
       ctx.textAlign = "center";
       ctx.textBaseline = "alphabetic";
       ctx.font = `400 26px ${FONT}`;
       ctx.fillStyle = rgba([150, 190, 255], 0.88 + 0.12 * Math.sin(time * 1.5));
-      ctx.fillText(opts.orchestrator.model, 0, R * 0.2 + 44);
+      ctx.fillText(opts.orchestrator.model, 0, R * 0.2 + 44 * ORB_SCALE);
       ctx.restore();
       ctx.globalCompositeOperation = "source-over";
     }
@@ -2166,7 +2064,7 @@
       },
       pulse(id) {
         const targets = id ? agents.filter((a) => a.spec.id === id) : agents;
-        addRipple(center.x, center.y, CENTER_R, CENTER_R + 260, [140, 170, 255], 1.6, 4);
+        addRipple(center.x, center.y, CENTER_R, CENTER_R + 260 * ORB_SCALE, [140, 170, 255], 1.6, 4);
         for (const a of targets)
           pulseAgent(a, 5);
       }

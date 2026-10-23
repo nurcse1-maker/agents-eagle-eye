@@ -36,6 +36,7 @@ export const STATUS: Record<AgentStatus, StatusCfg> = {
 /** Done with their work: drawn small, dim and wordless, a little behind the live agents. */
 export const FINISHED = new Set<AgentStatus>(['completed', 'stopped', 'offline']);
 export const LIVE = new Set<AgentStatus>(['running', 'thinking', 'waiting']);
+export const HALTED = new Set<AgentStatus>(['stopped', 'offline']);
 
 export const NEXT_STATUS: Record<AgentStatus, AgentStatus[]> = {
   running:   ['thinking', 'completed', 'waiting', 'running'],

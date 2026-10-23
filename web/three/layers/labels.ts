@@ -441,7 +441,7 @@ export function createLabelsLayer(): Layer {
       for (const a of world.agents.values()) {
         const l = labels.get(a.id)
         if (!l) continue
-        const vis = labelVis(a.spawn.x, a.rest, a.hover.x)
+        const vis = labelVis(a.spawn.x, a.rest, a.hover.x) * a.fade
         v3.set(a.x, a.y, a.z)
         rig.project(v3, proj)
         const behindCam = !proj.visible || proj.z >= 1

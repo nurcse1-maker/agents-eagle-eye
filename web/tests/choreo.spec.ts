@@ -7,15 +7,11 @@ import {
   Choreography,
   EVENT_STALE_MS,
   LAUNCH_TOTAL,
-  NOVA_TOTAL,
   PAUSE_SILENT_MS,
   TRAIL_MAX,
-  clampSpriteRadius,
   classifyStatus,
   isWake,
-  novaBloomScale,
   novaChargeWhiteA,
-  novaFlash,
 } from '../three/choreo'
 import type { ChoreoEnv, ChoreoHooks } from '../three/choreo'
 import { DemoSim } from '../three/demo-sim'
@@ -122,12 +118,8 @@ test('launch timeline: charge 0.55, fly 0.8 (u^1.6), impact at 1.35, gone at 2.3
   a.launched = true
   const f = ch.startLaunch(a, true)
   run(ch, a, env, 0, 0.3)
-  expect(log.ripples.length).toBe(1) // the charge ripple on the orb, once
-  expect(log.ripples[0].r0).toBeCloseTo(135 * 0.98, 6)
-  expect(log.ripples[0].r1).toBeCloseTo(135 + 300, 6)
-  expect(log.ripples[0].life).toBe(1.5)
-  expect(log.ripples[0].w).toBe(4)
-  expect(log.shocks).toEqual([45])
+  expect(log.ripples.length).toBe(0)
+  expect(log.shocks).toEqual([])
   expect(log.sparks).toBeGreaterThan(20)
   expect(env.orb.flash).toBeGreaterThan(0.2)
   expect(f.trailN).toBe(0)
@@ -142,10 +134,10 @@ test('launch timeline: charge 0.55, fly 0.8 (u^1.6), impact at 1.35, gone at 2.3
   run(ch, a, env, 0.95, 1.36)
   expect(a.launchGrow).toBe(1)
   expect(log.pulses).toEqual([{ id: a.id, n: 14 }])
-  expect(log.shocks).toEqual([45, 60])
+  expect(log.shocks).toEqual([60])
   expect(log.shakes).toEqual([5])
-  expect(log.ripples.length).toBe(4) // charge + 3 impact
-  expect(log.ripples.slice(1).every(r => r.shell)).toBe(true)
+  expect(log.ripples.length).toBe(3)
+  expect(log.ripples.every(r => r.shell)).toBe(true)
   expect(a.flash).toBe(1)
   expect(a.hit).toBe(1.4)
   expect(ch.list.length).toBe(1)
@@ -187,7 +179,10 @@ test('generic status change: flash, pulse 5 or 12, burst 12 or 26 at speed 90, r
   expect(log.pulses[1].n).toBe(12)
   expect(log.bursts[1].n).toBe(26)
   // stopped/offline: no launch/nova
+  const before = log.pulses.length + log.bursts.length + log.ripples.length
   expect(ch.onStatus(a, 'running', 'stopped')).toBe('change')
+  expect(ch.onStatus(a, 'running', 'offline')).toBe('change')
+  expect(log.pulses.length + log.bursts.length + log.ripples.length).toBe(before)
   expect(ch.list.length).toBe(0)
 })
 
@@ -205,28 +200,13 @@ test('launch status starts only the launch (no generic fx); nova only the nova',
   expect(log.pulses.length + log.bursts.length).toBe(0)
 })
 
-test('nova: duplicate ignored, charge 1.15 keeps the rest target, blast numbers, total 4.75 s', () => {
+test('nova: duplicate ignored, charge 1.15 keeps the rest target, the blast only settles the planet', () => {
   const { ch, log, env } = setup()
   const a = mk(0, 'completed')
   const f = ch.startNova(a)!
   expect(ch.startNova(a)).toBeUndefined()
   expect(ch.list.length).toBe(1)
-  expect(f.rays.length).toBe(18)
-  expect(f.clumps.length).toBe(26)
-  for (const r of f.rays) {
-    expect(Math.hypot(r.dx, r.dy, r.dz)).toBeCloseTo(1, 6)
-    expect(r.len).toBeGreaterThanOrEqual(180)
-    expect(r.len).toBeLessThanOrEqual(460)
-    expect(r.w).toBeGreaterThanOrEqual(1)
-    expect(r.w).toBeLessThanOrEqual(3.2)
-  }
-  for (const c of f.clumps) {
-    expect(Math.hypot(c.dx, c.dy, c.dz)).toBeCloseTo(1, 6)
-    expect(c.dx * c.tx + c.dy * c.ty + c.dz * c.tz).toBeCloseTo(0, 6)
-    expect(c.dist).toBeGreaterThanOrEqual(120)
-    expect(c.size).toBeGreaterThanOrEqual(14)
-    expect(c.size).toBeLessThanOrEqual(40)
-  }
+  expect(f.kind).toBe('nova')
   // charge: the finished agent must not settle to rest while charging (stepAppearance reads a.charging)
   let t = 0
   const dt = 1 / 60
@@ -239,48 +219,39 @@ test('nova: duplicate ignored, charge 1.15 keeps the rest target, blast numbers,
   expect(a.charging).toBe(true)
   expect(a.rest).toBeLessThan(0.05)
   const e2 = Math.pow(t / NOVA_CHARGE, 2)
-  expect(a.novaL).toBeGreaterThan(0.2)
-  expect(a.novaL).toBeLessThanOrEqual(0.2 + 1.4 * e2 + 1e-6)
-  expect(a.novaS).toBeLessThan(1)
+  expect(a.novaL).toBeCloseTo(0.3 * (0.2 + 1.4 * e2), 9)
+  expect(a.novaS).toBeCloseTo(1 - 0.9 * e2, 9)
   expect(log.shocks.length).toBe(0)
+  while (t + dt < NOVA_CHARGE) {
+    t += dt
+    ch.update(dt, t, [a], env)
+  }
+  const charged = log.sparks
   while (t < NOVA_CHARGE + 0.05) {
     t += dt
     ch.update(dt, t, [a], env)
   }
   expect(a.charging).toBe(false)
-  expect(a.novaS).toBe(1.45)
-  expect(a.novaL).toBe(2.4)
-  expect(a.flash).toBe(1)
-  expect(a.hit).toBe(1.4)
-  expect(log.shakes).toEqual([16])
-  expect(log.shocks).toEqual([210])
-  expect(log.ripples.map(r => r.r1 - a.r)).toEqual([520, 360, 220])
-  expect(log.ripples.map(r => r.life)).toEqual([2.6, 2.0, 1.4])
-  expect(log.ripples.map(r => r.w)).toEqual([7, 4, 3])
-  expect(log.ripples.every(r => r.shell)).toBe(true)
-  const charged = log.sparks
-  expect(charged).toBeGreaterThan(120)
-  while (t < NOVA_TOTAL - 0.05) {
-    t += dt
-    ch.update(dt, t, [a], env)
-  }
-  expect(ch.list.length).toBe(1)
-  while (t < NOVA_TOTAL + 0.05) {
-    t += dt
-    ch.update(dt, t, [a], env)
-  }
+  expect(a.novaS).toBe(1)
+  expect(a.novaL).toBe(0)
+  expect(a.flash).toBe(0)
+  expect(a.hit).toBe(0)
+  expect(log.sparks).toBe(charged)
+  expect(log.shakes).toEqual([])
+  expect(log.shocks).toEqual([])
+  expect(log.ripples).toEqual([])
+  expect(log.bursts).toEqual([])
+  expect(log.pulses).toEqual([])
   expect(ch.list.length).toBe(0)
-  expect(NOVA_TOTAL).toBeCloseTo(4.75, 9)
 })
 
-test('nova wobble is scaled by motion', () => {
+test('nova charge: planet shrinks to 10% with no wobble, whatever the motion', () => {
   const calm = setup()
   const a = mk(0)
   calm.env.motion = 0.35
   calm.ch.startNova(a)
-  run(calm.ch, a, calm.env, 0, 1.1)
-  const small = Math.abs(a.novaS - (1 - 0.26 * Math.pow(1.1 / 1.15, 2)))
-  expect(small).toBeLessThan(0.014 * 0.35 + 0.003)
+  const t = run(calm.ch, a, calm.env, 0, 1.1)
+  expect(a.novaS).toBeCloseTo(1 - 0.9 * Math.pow(t / NOVA_CHARGE, 2), 9)
 })
 
 test('drop and clear release the charging flag', () => {
@@ -345,34 +316,17 @@ test('demo sim changes go through the world status event', () => {
   expect(a.statusT).toBe(0)
 })
 
-// review M1: the white-out was too strong. Old constants: core alpha q^2, radius r*(6+10tb), wide alpha 0.35 q^2,
-// charge white e2*0.9. New: 0.5 q^2, r*(4+6tb), 0.12 q^2, e2*0.5, radii clamped to 30% of the short screen side.
-test('nova flash: halved core, smaller radius, faint wide wash, gone after 0.8 s', () => {
-  const f0 = novaFlash(0, 60)!
-  expect(f0.q).toBe(1)
-  expect(f0.coreA).toBe(0.5)
-  expect(f0.coreR).toBe(60 * 4)
-  expect(f0.wideA).toBeCloseTo(0.12, 12)
-  const f4 = novaFlash(0.4, 60)!
-  expect(f4.coreA).toBeCloseTo(0.5 * 0.25, 12)
-  expect(f4.coreR).toBeCloseTo(60 * (4 + 2.4), 12)
-  expect(novaFlash(0.8, 60)).toBeUndefined()
-  expect(novaFlash(-0.1, 60)).toBeUndefined()
-  expect(novaChargeWhiteA(1)).toBe(0.5)
-  expect(novaChargeWhiteA(0.25)).toBeCloseTo(0.125, 12)
-})
-
-test('flash sprite radius is capped to 30% of min(w, h) in screen px, so zoom cannot blow it up', () => {
-  // 1000x700 view, 0.5 px per world unit: cap = 210 px = 420 world units
-  expect(clampSpriteRadius(100, 0.5, 1000, 700)).toBe(100)
-  expect(clampSpriteRadius(5000, 0.5, 1000, 700)).toBe(420)
-  // zoomed in 4x (2 px per unit): the same sprite is held to 105 world units, still 210 px on screen
-  expect(clampSpriteRadius(5000, 2, 1000, 700)).toBe(105)
-  expect(clampSpriteRadius(5000, 2, 420, 800) * 2).toBeCloseTo(0.3 * 420, 12)
-  expect(clampSpriteRadius(50, 0, 1000, 700)).toBe(50) // degenerate projection: unchanged
-  expect(novaBloomScale(0)).toBe(1)
-  expect(novaBloomScale(1)).toBe(0.5)
-  expect(novaBloomScale(2)).toBe(0.5)
+test('nova charge white glow is 0.15 e2, and nothing flashes, shakes or pushes after the blast', () => {
+  expect(novaChargeWhiteA(1)).toBe(0.15)
+  expect(novaChargeWhiteA(0.25)).toBeCloseTo(0.0375, 12)
+  const { ch, log, env } = setup()
+  const a = mk(0, 'completed')
+  ch.startNova(a)
+  run(ch, a, env, 0, NOVA_CHARGE + 0.05)
+  expect(a.flash).toBe(0)
+  expect(a.hit).toBe(0)
+  expect(log.shakes.length + log.shocks.length + log.ripples.length + log.pulses.length).toBe(0)
+  expect(ch.list.length).toBe(0)
 })
 
 // review M3: status flips queued while a 3D view is paused must not all replay on resume.

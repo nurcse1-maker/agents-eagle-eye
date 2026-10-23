@@ -8,6 +8,7 @@
  */
 import type { RGB } from '../shared/palette'
 import { clamp, damp, lerp, TAU } from './springs'
+import { CENTER_R } from './layout3d'
 
 /** Plasma palette along the flare loop (2D L94-97). */
 export const FLARE_STOPS: [number, RGB][] = [
@@ -115,7 +116,7 @@ export class FlareSim {
   tilt = 0
   /** mid-stage of the two-stage easing (2D L456) */
   private fm = { th: -0.95, ph: -0.55, sc: 0.25, el: 1, di: 0, dn: 1 }
-  private R = 135
+  private R = CENTER_R
 
   readonly particles = new Float32Array(FLARE_MAX * FP_STRIDE)
   count = 0

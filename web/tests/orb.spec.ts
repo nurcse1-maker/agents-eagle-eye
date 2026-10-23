@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { BRAIN_DASH_SPEED, discOrbitPos, HALO_CAP, HALO_INNER, haloAlpha, MAIN_GLOW_CAP, mainGlowAlpha, softClip, orbBeat, orbBpm, orbitPos, ORB_YAW_SPEED, orbScale, pulseInterval, satelliteSpeed, tiltDisc } from '../three/layers/orb'
+import { discOrbitPos, HALO_CAP, HALO_INNER, haloAlpha, MAIN_GLOW_CAP, mainGlowAlpha, softClip, orbBeat, orbBpm, orbitPos, ORB_YAW_SPEED, orbScale, pulseInterval, satelliteSpeed, tiltDisc } from '../three/layers/orb'
 
 test('bpm rises with active agents', () => {
   expect(orbBpm(0)).toBeCloseTo(0.55)
@@ -69,9 +69,8 @@ test('tiltDisc rotates about the node axis: points on the axis stay put', () => 
   expect(o.z).toBeCloseTo(Math.sin(node) * 50)
 })
 
-test('surface yaw and brain dash are slow and scale with motion', () => {
+test('surface yaw is slow and scales with motion', () => {
   expect(ORB_YAW_SPEED).toBeCloseTo(0.05)
-  expect(BRAIN_DASH_SPEED).toBe(14)
 })
 
 test('softClip is ~linear for small x and saturates at the cap', () => {

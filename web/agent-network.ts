@@ -20,7 +20,7 @@
 
 import { DUST_PALETTE } from './shared/palette';
 import type { AgentIcon, RGB } from './shared/palette';
-import { FINISHED, GREY, LIVE, NEXT_STATUS, STATUS } from './shared/status';
+import { FINISHED, GREY, HALTED, LIVE, NEXT_STATUS, STATUS } from './shared/status';
 import type { AgentStatus } from './shared/status';
 import { DEFAULT_AGENTS } from './shared/defaults';
 import type { AgentSpec } from './shared/defaults';
@@ -69,11 +69,13 @@ const DESIGN_W = 1024;
 const DESIGN_H = 1536;
 const DESIGN_CX = 512;
 const DESIGN_CY = 755;
-const CENTER_R = 135;
+const ORB_LAYOUT_R = 135;
+const ORB_SCALE = 0.7;
+const CENTER_R = ORB_LAYOUT_R * ORB_SCALE;
 
-/** Launch: the orb charges, a comet rides the core strand out to the agent. Nova: the agent collapses, then detonates. */
+/** Launch: the orb charges, a comet rides the core strand out to the agent. Nova: the agent collapses, then settles back. */
 const LAUNCH_CHARGE = 0.55, LAUNCH_FLY = 0.8, LAUNCH = LAUNCH_CHARGE + LAUNCH_FLY;
-const NOVA_CHARGE = 1.15, NOVA_AFTER = 3.6;
+const NOVA_CHARGE = 1.15;
 
 const FONT = 'Inter, "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif';
 
@@ -187,14 +189,6 @@ const P = {
   db: new Path2D('M12 8c4.4 0 8-1.3 8-3s-3.6-3-8-3-8 1.3-8 3 3.6 3 8 3z M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5 M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3'),
   box: new Path2D('M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z'),
   gear: gearPath(),
-  brain: [
-    'M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z',
-    'M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z',
-    'M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4',
-    'M17.599 6.5a3 3 0 0 0 .399-1.375', 'M6.003 5.125A3 3 0 0 0 6.401 6.5',
-    'M3.477 10.896a4 4 0 0 1 .585-.396', 'M19.938 10.5a4 4 0 0 1 .585.396',
-    'M6 18a4 4 0 0 1-1.967-.516', 'M19.967 17.484A4 4 0 0 1 18 18',
-  ].map((d) => new Path2D(d)),
 };
 
 const ICONS: Record<AgentIcon, IconFn> = {
@@ -334,10 +328,6 @@ const ICONS: Record<AgentIcon, IconFn> = {
   },
 };
 
-function drawBrain(ctx: CanvasRenderingContext2D) {
-  for (const p of P.brain) ctx.stroke(p);
-}
-
 /* ───────────────────────────── internal state types ───────────────────────────── */
 
 interface Strand {
@@ -355,10 +345,8 @@ interface FlareP {
 }
 interface Fx {
   kind: 'launch' | 'nova'; a: AgentState; t: number; intro: boolean; acc: number;
-  fired: boolean; arrived: boolean; blasted: boolean; hx: number; hy: number; u: number;
+  arrived: boolean; hx: number; hy: number; u: number;
   trail: number[];
-  rays: { ang: number; len: number; w: number }[];
-  clumps: { ang: number; dist: number; size: number; hot: boolean; dir: number }[];
 }
 interface Dust { x: number; y: number; vx: number; vy: number; s: number; cls: number; ph: number; tf: number; age: number; big: boolean }
 
@@ -387,7 +375,7 @@ interface AgentState {
   packets: Packet[];
   spawnAcc: number;
   /** launch / supernova choreography */
-  launched: boolean; launchGrow: number; charging: boolean; novaS: number; novaL: number;
+  launched: boolean; launchGrow: number; charging: boolean; novaS: number; novaL: number; fade: number;
   dragging: boolean; grabX: number; grabY: number;
 }
 
@@ -515,7 +503,7 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
       tokText: '', timeText: '', tokFlash: 0, timeFlash: 0,
       lean: [0, 0], rest: FINISHED.has(spec.status) ? 1 : 0, phase: rnd(0, TAU), fs: rnd(0.8, 1.25), side,
       flip: false, strands, packets: [], spawnAcc: rnd(0, 1),
-      launched: false, launchGrow: 0, charging: false, novaS: 1, novaL: 0,
+      launched: false, launchGrow: 0, charging: false, novaS: 1, novaL: 0, fade: HALTED.has(spec.status) ? 0 : 1,
       dragging: false, grabX: 0, grabY: 0,
     } as AgentState;
   }
@@ -533,7 +521,7 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
       a.hx = cxL + (a.spec.x - DESIGN_CX) * stretchX;
       a.hy = cyL + (a.spec.y - DESIGN_CY) * stretchY;
       const lw = Math.max(measure(ctx, `600 24px ${FONT}`, a.spec.name), 175);
-      if (a.hx > cxL) a.hx = Math.min(a.hx, Math.max(cxL + CENTER_R + a.r + 20, LW - 8 - a.r - 30 - lw));
+      if (a.hx > cxL) a.hx = Math.min(a.hx, Math.max(cxL + ORB_LAYOUT_R + a.r + 20, LW - 8 - a.r - 30 - lw));
       if (snap) { a.x = a.hx; a.y = a.hy; }
       a.flip = a.hx + a.r + 30 + lw > LW - 8 && a.hx > cxL;
     }
@@ -597,21 +585,19 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
   /* ── cinematic effects ── */
   const fxList: Fx[] = [];
   let shake = 0;
-  const WHITE: RGB = [255, 255, 255], WARM: RGB = [255, 196, 140];
+  const WHITE: RGB = [255, 255, 255];
   function sparkAt(x: number, y: number, vx: number, vy: number, max: number, size: number, col: RGB) {
     if (sparks.length < 900) sparks.push({ x, y, vx, vy, life: 0, max, size, col });
   }
   function newFx(kind: Fx['kind'], a: AgentState, intro = false): Fx {
-    const f: Fx = { kind, a, t: 0, intro, acc: 0, fired: false, arrived: false, blasted: false, hx: 0, hy: 0, u: 0, trail: [], rays: [], clumps: [] };
+    const f: Fx = { kind, a, t: 0, intro, acc: 0, arrived: false, hx: 0, hy: 0, u: 0, trail: [] };
     fxList.push(f);
     return f;
   }
   function startLaunch(a: AgentState, intro: boolean) { newFx('launch', a, intro); }
   function startNova(a: AgentState) {
     if (fxList.some((f) => f.kind === 'nova' && f.a === a)) return;
-    const f = newFx('nova', a);
-    for (let i = 0; i < 18; i++) f.rays.push({ ang: rnd(0, TAU), len: rnd(180, 460), w: rnd(1, 3.2) });
-    for (let i = 0; i < 26; i++) f.clumps.push({ ang: rnd(0, TAU), dist: rnd(120, 360), size: rnd(14, 40), hot: Math.random() < 0.4, dir: Math.random() < 0.5 ? -1 : 1 });
+    newFx('nova', a);
   }
   function impact(a: AgentState) {
     const c = lighten(a.accent, 0.25);
@@ -636,11 +622,6 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
       if (f.kind === 'launch') {
         const ang = Math.atan2(a.y - center.y, a.x - center.x);
         const rx = center.x + Math.cos(ang) * CENTER_R, ry = center.y + Math.sin(ang) * CENTER_R;
-        if (!f.fired) {
-          f.fired = true;
-          addRipple(center.x, center.y, CENTER_R * 0.98, CENTER_R + 300, lighten(a.accent, 0.2), 1.5, 4);
-          shockwave(center.x, center.y, 45);
-        }
         if (k < LAUNCH_CHARGE) {
           const e = k / LAUNCH_CHARGE;
           center.flash = Math.max(center.flash, 0.55 * e);
@@ -671,30 +652,20 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
         if (k < NOVA_CHARGE) {
           const e = k / NOVA_CHARGE, e2 = e * e;
           a.charging = true;
-          a.novaS = 1 - 0.26 * e2 + Math.sin(k * 70) * 0.014 * e2 * motion;
-          a.novaL = 0.2 + 1.4 * e2;
+          a.novaS = 1 - 0.9 * e2;
+          a.novaL = 0.3 * (0.2 + 1.4 * e2);
           f.acc += dt * (40 + 220 * e2);
           while (f.acc >= 1) {
             f.acc -= 1;
             const an = rnd(0, TAU), d = a.r * rnd(1.8, 3.4);
             sparkAt(a.x + Math.cos(an) * d, a.y + Math.sin(an) * d, -Math.cos(an) * 280, -Math.sin(an) * 280, rnd(0.3, 0.6), rnd(0.9, 1.8), Math.random() < 0.5 ? WHITE : lighten(a.accent, 0.4));
           }
-        } else if (!f.blasted) {
-          f.blasted = true;
+        } else {
           a.charging = false;
-          a.novaS = 1.45; a.novaL = 2.4; a.flash = 1; a.hit = 1.4;
-          shake = Math.max(shake, 16 * motion);
-          shockwave(a.x, a.y, 210);
-          addRipple(a.x, a.y, a.r * 0.6, a.r + 520, WHITE, 2.6, 7);
-          addRipple(a.x, a.y, a.r * 0.8, a.r + 360, lighten(a.accent, 0.3), 2.0, 4);
-          addRipple(a.x, a.y, a.r, a.r + 220, WARM, 1.4, 3);
-          for (let n = 0; n < 120; n++) {
-            const an = rnd(0, TAU), sp = Math.pow(Math.random(), 0.6) * 560 + 60;
-            const col = n % 4 === 0 ? WHITE : n % 4 === 1 ? WARM : lighten(a.accent, 0.3);
-            sparkAt(a.x + Math.cos(an) * a.r * 0.5, a.y + Math.sin(an) * a.r * 0.5, Math.cos(an) * sp, Math.sin(an) * sp, rnd(0.9, 2.4), rnd(1, 3), col);
-          }
+          a.novaS = 1;
+          a.novaL = 0;
+          fxList.splice(i, 1);
         }
-        if (k >= NOVA_CHARGE + NOVA_AFTER) { a.charging = false; fxList.splice(i, 1); }
       }
     }
   }
@@ -737,49 +708,8 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
       } else if (k < NOVA_CHARGE) {
         const e = k / NOVA_CHARGE, e2 = e * e;
         const hot = mix(a.accent, WHITE, 0.5);
-        drawGlow(ctx, a.x, a.y, a.r * (1.8 + 2.2 * e2), hot, 0.3 + 0.6 * e2);
-        drawGlow(ctx, a.x, a.y, a.r * (0.8 + e), WHITE, e2 * 0.9);
-        ctx.lineWidth = 2;
-        for (let j = 0; j < 3; j++) {
-          const ph = (e * 1.6 + j / 3) % 1;
-          ctx.strokeStyle = rgba(hot, (1 - ph) * 0.5 * e);
-          ctx.beginPath(); ctx.arc(a.x, a.y, a.r * (3.2 - 2.4 * ph), 0, TAU); ctx.stroke();
-        }
-      } else {
-        const tb = k - NOVA_CHARGE;
-        const cool = mix(a.accent, WHITE, 0.3);
-        if (tb < 0.8) {
-          const q = 1 - tb / 0.8;
-          drawGlow(ctx, a.x, a.y, a.r * (6 + tb * 10), [255, 250, 240], q * q);
-          drawGlow(ctx, a.x, a.y, Math.max(LW, LH) * 0.9, cool, 0.35 * q * q);
-        }
-        const ks = clamp(tb / 3);
-        for (const [sc, al] of [[1, 0.22], [0.7, 0.14]]) {
-          ctx.strokeStyle = rgba(cool, al * Math.pow(1 - ks, 1.5));
-          ctx.lineWidth = 18 * (1 - ks) + 2;
-          ctx.beginPath(); ctx.arc(a.x, a.y, easeOutCubic(ks) * (a.r + 430) * sc, 0, TAU); ctx.stroke();
-        }
-        ctx.lineCap = 'round';
-        for (const r of f.rays) {
-          const kr = clamp(tb / 1.6), er = easeOutCubic(kr);
-          const al = Math.pow(1 - kr, 1.5) * 0.8;
-          if (al < 0.01) continue;
-          const c = Math.cos(r.ang), sn = Math.sin(r.ang);
-          ctx.strokeStyle = rgba(WHITE, al);
-          ctx.lineWidth = r.w * (1 - kr);
-          ctx.beginPath();
-          ctx.moveTo(a.x + c * (a.r * 0.5 + er * r.len * 0.45), a.y + sn * (a.r * 0.5 + er * r.len * 0.45));
-          ctx.lineTo(a.x + c * (a.r * 0.7 + er * r.len), a.y + sn * (a.r * 0.7 + er * r.len));
-          ctx.stroke();
-        }
-        const kc = clamp(tb / 3.2);
-        const alc = 0.5 * Math.pow(1 - kc, 1.4);
-        if (alc > 0.01) {
-          for (const c of f.clumps) {
-            const d = easeOutCubic(kc) * c.dist + a.r * 0.5, an = c.ang + kc * 0.5 * c.dir;
-            drawGlow(ctx, a.x + Math.cos(an) * d, a.y + Math.sin(an) * d, c.size * (0.6 + kc * 0.9), c.hot ? WARM : cool, alc);
-          }
-        }
+        drawGlow(ctx, a.x, a.y, a.r * (1.8 + 2.2 * e2), hot, (0.3 + 0.6 * e2) * 0.3);
+        drawGlow(ctx, a.x, a.y, a.r * (0.8 + e), WHITE, e2 * 0.9 * 0.3);
       }
     }
     ctx.globalCompositeOperation = 'source-over';
@@ -821,6 +751,7 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
     a.statusT = 0;
     if (launch) { startLaunch(a, false); return; }
     if (nova) { startNova(a); return; }
+    if (HALTED.has(s)) return;
     a.flash = 1;
     pulseAgent(a, wake ? 12 : 5);
     burst(a.x, a.y, STATUS[s].dot, wake ? 26 : 12, 90);
@@ -832,7 +763,7 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
     const time = t;
 
     // centre
-    center.spawn.target = time > 0.05 ? 1 : 0;
+    center.spawn.target = time > 0.05 && agents.some((a) => !FINISHED.has(a.spec.status)) ? 1 : 0;
     center.spawn.step(dt);
     let ctx0 = 0, cty0 = 0;
     if (ptr.active) {
@@ -854,7 +785,7 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
     center.pulseT -= dt;
     if (center.pulseT <= 0) {
       center.pulseT = 2.4 - Math.min(1.2, active * 0.1);
-      addRipple(center.x, center.y, CENTER_R * 0.98, CENTER_R + 170, [110, 150, 255], 2.4, 3);
+      addRipple(center.x, center.y, CENTER_R * 0.98, CENTER_R + 170 * ORB_SCALE, [110, 150, 255], 2.4, 3);
     }
     center.shimmerT += dt;
 
@@ -876,6 +807,7 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
       a.rest = damp(a.rest, FINISHED.has(a.spec.status) && !a.charging ? 1 : 0, 3, dt);
       a.novaS = damp(a.novaS, 1, 4, dt);
       a.novaL = damp(a.novaL, 0, 1.6, dt);
+      a.fade = damp(a.fade, HALTED.has(a.spec.status) ? 0 : 1, 1.5, dt);
       a.r = a.baseR * lerp(0.68, 1.1, clamp(a.power)) * lerp(1, 0.52, a.rest); // inactive agents shrink, active ones claim the space, finished ones step back
       a.flow = damp(a.flow, cfg.flow, 2.6, dt);
       a.spin = damp(a.spin, cfg.spin, 2.6, dt);
@@ -886,7 +818,7 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
       a.flash = damp(a.flash, 0, 2.2, dt);
       a.tokFlash = damp(a.tokFlash, 0, 3.2, dt);
       a.timeFlash = damp(a.timeFlash, 0, 5, dt);
-      a.grow = Math.max(clamp((time - (a.spawnAt + 0.2)) / 1.3), a.launchGrow);
+      a.grow = FINISHED.has(a.spec.status) && !a.charging && a.launchGrow >= 1 ? damp(a.grow, 0, 3, dt) : Math.max(clamp((time - (a.spawnAt + 0.2)) / 1.3), a.launchGrow);
       a.introCount = clamp((time - a.spawnAt) / 2.0);
 
       // counters
@@ -1520,7 +1452,7 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
 
   function drawNode(a: AgentState, time: number) {
     const sp = a.spawn.x;
-    if (sp < 0.01) return;
+    if (sp < 0.01 || a.fade <= 0.002) return;
     const sc = sp * a.hover.x * a.novaS;
     const r = a.r;
     const col = a.col;
@@ -1533,14 +1465,14 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
     ctx.scale(sc, sc);
 
     ctx.globalCompositeOperation = 'lighter';
-    drawGlow(ctx, 0, 0, r * 2.4, col, (0.5 * act + 0.12) * breath + light * 0.3);
+    drawGlow(ctx, 0, 0, r * 2.4, col, ((0.5 * act + 0.12) * breath + light * 0.3) * a.fade);
 
     // body
     ctx.globalCompositeOperation = 'source-over';
     const body = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
-    body.addColorStop(0, 'rgba(10,14,46,0.93)');
-    body.addColorStop(0.72, 'rgba(5,8,30,0.93)');
-    body.addColorStop(1, rgba(col, 0.2 + 0.2 * act));
+    body.addColorStop(0, rgba([10, 14, 46], 0.93 * a.fade));
+    body.addColorStop(0.72, rgba([5, 8, 30], 0.93 * a.fade));
+    body.addColorStop(1, rgba(col, (0.2 + 0.2 * act) * a.fade));
     ctx.fillStyle = body;
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, TAU);
@@ -1551,16 +1483,16 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
     const ringCol = lighten(col, 0.18 + light * 0.4);
     const ra = 0.25 + 0.75 * act;
     ctx.lineWidth = 15;
-    ctx.strokeStyle = rgba(col, 0.1 * ra * breath);
+    ctx.strokeStyle = rgba(col, 0.1 * ra * breath * a.fade);
     ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
     ctx.lineWidth = 8;
-    ctx.strokeStyle = rgba(col, 0.28 * ra + light * 0.2);
+    ctx.strokeStyle = rgba(col, (0.28 * ra + light * 0.2) * a.fade);
     ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
     ctx.lineWidth = 3.2;
-    ctx.strokeStyle = rgba(ringCol, 0.35 + 0.65 * ra);
+    ctx.strokeStyle = rgba(ringCol, (0.35 + 0.65 * ra) * a.fade);
     ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
     ctx.lineWidth = 1.4;
-    ctx.strokeStyle = rgba(col, 0.38 * ra);
+    ctx.strokeStyle = rgba(col, 0.38 * ra * a.fade);
     ctx.beginPath(); ctx.arc(0, 0, r - 9, 0, TAU); ctx.stroke();
 
     // status-driven orbit rings
@@ -1571,7 +1503,7 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
         const n = st === 'thinking' ? 2 : 3;
         const sw = st === 'thinking' ? 1.1 : 0.62;
         ctx.lineWidth = 2.2;
-        ctx.strokeStyle = rgba(lighten(col, 0.3), 0.75 * act);
+        ctx.strokeStyle = rgba(lighten(col, 0.3), 0.75 * act * a.fade);
         for (let i = 0; i < n; i++) {
           const a0 = time * a.spin * (st === 'thinking' ? 2.6 : 0.9) * (i % 2 ? -1 : 1) + (i * TAU) / n;
           ctx.beginPath();
@@ -1582,19 +1514,19 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
         for (let i = 0; i < 3; i++) {
           const an = time * (0.8 + i * 0.35) * (i % 2 ? -1 : 1) + a.phase + i * 2.1;
           const rr = r + 22 + i * 5;
-          drawGlow(ctx, Math.cos(an) * rr, Math.sin(an) * rr, 6, col, 0.9 * act);
+          drawGlow(ctx, Math.cos(an) * rr, Math.sin(an) * rr, 6, col, 0.9 * act * a.fade);
         }
       } else if (st === 'waiting') {
         ctx.setLineDash([2, 9]);
         ctx.lineDashOffset = -time * 8;
         ctx.lineWidth = 2.4;
-        ctx.strokeStyle = rgba(col, 0.6 * (0.5 + 0.5 * Math.sin(time * 2.2)));
+        ctx.strokeStyle = rgba(col, 0.6 * (0.5 + 0.5 * Math.sin(time * 2.2)) * a.fade);
         ctx.beginPath(); ctx.arc(0, 0, r + 12, 0, TAU); ctx.stroke();
         ctx.setLineDash([]);
       } else if (st === 'idle') {
         const ph = (time * (st === 'idle' ? 0.35 : 0.5) + a.phase) % 1;
         ctx.lineWidth = 2;
-        ctx.strokeStyle = rgba(col, (1 - ph) * 0.5);
+        ctx.strokeStyle = rgba(col, (1 - ph) * 0.5 * a.fade);
         ctx.beginPath(); ctx.arc(0, 0, r + 4 + ph * 34, 0, TAU); ctx.stroke();
       }
     }
@@ -1602,7 +1534,7 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
     if (st === 'completed' && a.rest > 0.05) {
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.lineWidth = 2.2;
-      ctx.strokeStyle = rgba(lighten(col, 0.35), 0.75 * a.rest);
+      ctx.strokeStyle = rgba(lighten(col, 0.35), 0.75 * a.rest * a.fade);
       ctx.beginPath();
       ctx.moveTo(-r * 0.34, r * 0.02); ctx.lineTo(-r * 0.1, r * 0.28); ctx.lineTo(r * 0.38, -r * 0.26);
       ctx.stroke();
@@ -1610,7 +1542,7 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
 
     // inner core: soft breathing glow (no dot)
     const core = (0.18 + 0.5 * act) * (0.85 + 0.15 * Math.sin(time * 2.4 + a.phase)) + light * 0.3;
-    drawGlow(ctx, 0, 0, r * 0.62, lighten(col, 0.2), core);
+    drawGlow(ctx, 0, 0, r * 0.62, lighten(col, 0.2), core * a.fade);
 
     ctx.restore();
     ctx.globalCompositeOperation = 'source-over';
@@ -1643,7 +1575,7 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
 
   function drawLabel(a: AgentState, time: number) {
     const peek = clamp((a.hover.x - 1) / 0.07); // hovering a finished agent shows its words again
-    const vis = clamp((a.spawn.x - 0.45) * 2.2) * (1 - a.rest * (1 - peek));
+    const vis = clamp((a.spawn.x - 0.45) * 2.2) * (1 - a.rest * (1 - peek)) * a.fade;
     if (vis <= 0.01) return;
     const d = a.detail;
     const side = a.flip ? -1 : 1;
@@ -1764,14 +1696,14 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
       rim = rgba([90, 150, 255], 1);
     }
     ctx.strokeStyle = rim;
-    ctx.lineWidth = 26; ctx.globalAlpha = 0.14 + beat * 0.08;
+    ctx.lineWidth = 26 * ORB_SCALE; ctx.globalAlpha = 0.14 + beat * 0.08;
     ctx.beginPath(); ctx.arc(0, 0, R, 0, TAU); ctx.stroke();
-    ctx.lineWidth = 13; ctx.globalAlpha = 0.34;
+    ctx.lineWidth = 13 * ORB_SCALE; ctx.globalAlpha = 0.34;
     ctx.beginPath(); ctx.arc(0, 0, R, 0, TAU); ctx.stroke();
-    ctx.lineWidth = 5; ctx.globalAlpha = 1;
+    ctx.lineWidth = 5 * ORB_SCALE; ctx.globalAlpha = 1;
     ctx.beginPath(); ctx.arc(0, 0, R, 0, TAU); ctx.stroke();
-    ctx.lineWidth = 1.6; ctx.globalAlpha = 0.55;
-    ctx.beginPath(); ctx.arc(0, 0, R - 15, 0, TAU); ctx.stroke();
+    ctx.lineWidth = 1.6 * ORB_SCALE; ctx.globalAlpha = 0.55;
+    ctx.beginPath(); ctx.arc(0, 0, R - 15 * ORB_SCALE, 0, TAU); ctx.stroke();
     ctx.globalAlpha = 1;
 
     // tick ring with travelling wave
@@ -1781,8 +1713,8 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
       const wave = 0.5 + 0.5 * Math.sin(an * 3 - time * 2.2);
       ctx.globalAlpha = 0.1 + wave * 0.55;
       ctx.fillStyle = '#9fc4ff';
-      const rr = R + 17 + wave * 3;
-      ctx.beginPath(); ctx.arc(Math.cos(an) * rr, Math.sin(an) * rr, 1.1 + wave * 0.9, 0, TAU); ctx.fill();
+      const rr = R + (17 + wave * 3) * ORB_SCALE;
+      ctx.beginPath(); ctx.arc(Math.cos(an) * rr, Math.sin(an) * rr, (1.1 + wave * 0.9) * ORB_SCALE, 0, TAU); ctx.fill();
     }
     ctx.globalAlpha = 1;
 
@@ -1790,35 +1722,14 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
     for (let i = 0; i < 4; i++) {
       const sp2 = 0.55 / Math.pow(1 + i * 0.35, 1.5);
       const an = time * sp2 * (i % 2 ? -1 : 1) * motion + i * 1.7;
-      const rr = R + 40 + i * 14;
+      const rr = R + (40 + i * 14) * ORB_SCALE;
       const mc: RGB = halo[i][0];
-      drawGlow(ctx, Math.cos(an) * rr, Math.sin(an) * rr, 10, mc, 0.9);
+      drawGlow(ctx, Math.cos(an) * rr, Math.sin(an) * rr, 10 * ORB_SCALE, mc, 0.9);
       ctx.fillStyle = '#fff';
       ctx.globalAlpha = 0.9;
-      ctx.beginPath(); ctx.arc(Math.cos(an) * rr, Math.sin(an) * rr, 1.6, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(Math.cos(an) * rr, Math.sin(an) * rr, 1.6 * ORB_SCALE, 0, TAU); ctx.fill();
       ctx.globalAlpha = 1;
     }
-
-    // brain
-    const bs = (R * 0.64) / 24;
-    ctx.save();
-    ctx.translate(0, -R * 0.12);
-    ctx.scale(bs * (1 + beat * 0.03), bs * (1 + beat * 0.03));
-    ctx.translate(-12, -12);
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    const bc: RGB = [52, 156, 255];
-    drawGlow(ctx, 12, 12, 26, bc, 0.4 + beat * 0.3);
-    ctx.strokeStyle = rgba(bc, 0.3); ctx.lineWidth = 3.6;
-    drawBrain(ctx);
-    ctx.strokeStyle = rgba(lighten(bc, 0.25), 0.95); ctx.lineWidth = 1.35;
-    drawBrain(ctx);
-    // travelling "thought" light
-    ctx.setLineDash([5, 34]);
-    ctx.lineDashOffset = -time * 14;
-    ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 1.1;
-    drawBrain(ctx);
-    ctx.setLineDash([]);
-    ctx.restore();
 
     // titles
     ctx.globalCompositeOperation = 'source-over';
@@ -1826,7 +1737,7 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
     ctx.textBaseline = 'alphabetic';
     ctx.font = `400 26px ${FONT}`;
     ctx.fillStyle = rgba([150, 190, 255], 0.88 + 0.12 * Math.sin(time * 1.5));
-    ctx.fillText(opts.orchestrator.model, 0, R * 0.2 + 44);
+    ctx.fillText(opts.orchestrator.model, 0, R * 0.2 + 44 * ORB_SCALE);
 
     ctx.restore();
     ctx.globalCompositeOperation = 'source-over';
@@ -2007,7 +1918,7 @@ export function mountAgentNetwork(container: HTMLElement, options: NetworkOption
     },
     pulse(id) {
       const targets = id ? agents.filter((a) => a.spec.id === id) : agents;
-      addRipple(center.x, center.y, CENTER_R, CENTER_R + 260, [140, 170, 255], 1.6, 4);
+      addRipple(center.x, center.y, CENTER_R, CENTER_R + 260 * ORB_SCALE, [140, 170, 255], 1.6, 4);
       for (const a of targets) pulseAgent(a, 5);
     },
   };

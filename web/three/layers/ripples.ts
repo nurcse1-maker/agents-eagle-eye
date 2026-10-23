@@ -1,6 +1,6 @@
 /**
  * Draws the shared `fx.ripples` pool (2D drawEffects L1841-1849) as camera-facing rings: radius lerp(r0, r1, easeOutCubic(k)),
- * alpha (1-k)*0.55, width w*(1-0.6k). Ripples flagged `shell` (nova / launch) are drawn as spherical shells: a bright limb
+ * alpha (1-k)*0.55, width w*(1-0.6k). Ripples flagged `shell` (launch) are drawn as spherical shells: a bright limb
  * plus a faint rim-weighted interior, so they read as a sphere of light from any orbit angle. One instanced draw call, 60 cap.
  */
 import type { Scene } from 'three'

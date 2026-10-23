@@ -3,7 +3,7 @@
  * soft collisions, pointer gravity, drag, decoration weights, hit picking. No three, no DOM, so it is unit tested
  * (web/tests/nodes.spec.ts). Every constant cites the 2D source, web/agent-network.ts `update()` L831-935.
  */
-import { FINISHED, GREY, STATUS } from '../shared/status'
+import { FINISHED, GREY, HALTED, STATUS } from '../shared/status'
 import type { AgentStatus } from '../shared/status'
 import type { AgentState } from './world'
 import { TAU, clamp, damp, lerp } from './springs'
@@ -47,6 +47,7 @@ export function stepAppearance(a: AgentState, dt: number, time: number, hovered:
   a.rest = damp(a.rest, FINISHED.has(a.spec.status) && !a.charging ? 1 : 0, 3, dt)
   a.novaS = damp(a.novaS, 1, 4, dt)
   a.novaL = damp(a.novaL, 0, 1.6, dt)
+  a.fade = damp(a.fade, HALTED.has(a.spec.status) ? 0 : 1, 1.5, dt)
   a.r = agentRadius(a.baseR, a.power, a.rest)
   a.flow = damp(a.flow, cfg.flow, 2.6, dt)
   a.spin = damp(a.spin, cfg.spin, 2.6, dt)
@@ -64,7 +65,7 @@ export function stepAppearance(a: AgentState, dt: number, time: number, hovered:
   a.flash = damp(a.flash, 0, 2.2, dt)
   a.tokFlash = damp(a.tokFlash, 0, 3.2, dt)
   a.timeFlash = damp(a.timeFlash, 0, 5, dt)
-  a.grow = Math.max(clamp((time - (a.spawnAt + 0.2)) / 1.3), a.launchGrow)
+  a.grow = FINISHED.has(a.spec.status) && !a.charging && a.launchGrow >= 1 ? damp(a.grow, 0, 3, dt) : Math.max(clamp((time - (a.spawnAt + 0.2)) / 1.3), a.launchGrow)
   a.introCount = clamp((time - a.spawnAt) / 2.0)
 }
 

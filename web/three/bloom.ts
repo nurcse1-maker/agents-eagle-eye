@@ -68,9 +68,8 @@ export interface BloomDeps {
 export interface Bloom {
   /** The preference of the user (persisted). */
   user: boolean
-  /** Strength multipliers written by the engine (zoom) and the choreography layer (nova flash); 1 = none. */
+  /** Strength multiplier written by the engine (zoom); 1 = none. */
   zoomScale: number
-  novaScale: number
   /** True when the composer drives this frame. */
   readonly active: boolean
   /** Renders the frame through the composer. Call only when `active`; returns false if it failed and bloom is off now. */
@@ -180,7 +179,6 @@ export const createBloom = (d: BloomDeps): Bloom => {
   const api: Bloom = {
     user: readBloomPref(),
     zoomScale: 1,
-    novaScale: 1,
     get active() {
       return bloomActive(api.user, d.tier(), !failed)
     },
@@ -191,7 +189,7 @@ export const createBloom = (d: BloomDeps): Bloom => {
         return false
       }
       route(true)
-      if (bloomPass) bloomPass.strength = baseStrength * api.zoomScale * api.novaScale
+      if (bloomPass) bloomPass.strength = baseStrength * api.zoomScale
       composer!.render(dt)
       return true
     },

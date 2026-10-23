@@ -1169,7 +1169,7 @@ export function createNodesLayer(): NodesLayer {
         const a = list[i]
         const s = slotOf.get(a)
         if (s === undefined) continue
-        writeAgent(s, a, decos[s], spins[s], 1, 1, time)
+        writeAgent(s, a, decos[s], spins[s], a.fade, 1, time)
       }
       for (const raw of exits) {
         const e = raw

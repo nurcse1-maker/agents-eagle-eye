@@ -73,6 +73,16 @@ test('appearance dampers converge to the status of a finished agent', () => {
   expect(a.introCount).toBe(1)
 })
 
+test('stopped and offline planets fade out over ~4 s and back in when running again', () => {
+  const a = mk(0, 'running')
+  a.spec.status = 'stopped'
+  run(dt => stepAppearance(a, dt, 10, false), 4)
+  expect(a.fade).toBeLessThan(0.01)
+  a.spec.status = 'running'
+  run(dt => stepAppearance(a, dt, 10, false), 4)
+  expect(a.fade).toBeGreaterThan(0.99)
+})
+
 test('flash decays at lambda 2.2', () => {
   const a = mk()
   a.flash = 1

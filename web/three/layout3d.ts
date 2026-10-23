@@ -13,7 +13,8 @@ import { DESIGN_CX, DESIGN_CY, DESIGN_H, DESIGN_W, ringPlacement } from '../shar
 import type { AgentSpec } from '../shared/defaults'
 import { clamp } from './springs'
 
-export const CENTER_R = 135 // orb radius, 2D L72
+export const ORB_SCALE = 0.7
+export const CENTER_R = 135 * ORB_SCALE // orb radius, 2D L72
 /** Agents sit within +/-HEIGHT_RANGE world units above/below the disc plane. */
 export const HEIGHT_RANGE = 60
 

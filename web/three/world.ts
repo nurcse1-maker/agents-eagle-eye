@@ -6,7 +6,7 @@
  */
 import { DEFAULT_AGENTS } from '../shared/defaults'
 import type { AgentSpec } from '../shared/defaults'
-import { GREY, FINISHED, STATUS } from '../shared/status'
+import { GREY, FINISHED, HALTED, STATUS } from '../shared/status'
 import type { AgentStatus } from '../shared/status'
 import type { RGB } from '../shared/palette'
 import { toSpecs } from '../shared/ring'
@@ -23,7 +23,6 @@ export const LAUNCH_CHARGE = 0.55
 export const LAUNCH_FLY = 0.8
 export const LAUNCH = LAUNCH_CHARGE + LAUNCH_FLY
 export const NOVA_CHARGE = 1.15
-export const NOVA_AFTER = 3.6
 /** An agent's intro: `spawnAt = INTRO_BASE + i * INTRO_STEP`, launch fires at `spawnAt - LAUNCH` (2D L485). */
 export const INTRO_BASE = LAUNCH + 0.3
 export const INTRO_STEP = 0.22
@@ -113,6 +112,7 @@ export interface AgentState {
   charging: boolean
   novaS: number
   novaL: number
+  fade: number
   dragging: boolean
   grabX: number
   grabY: number
@@ -249,6 +249,7 @@ export const makeAgentState = (spec: AgentSpec, index: number, rand: () => numbe
     charging: false,
     novaS: 1,
     novaL: 0,
+    fade: HALTED.has(spec.status) ? 0 : 1,
     dragging: false,
     grabX: 0,
     grabY: 0,

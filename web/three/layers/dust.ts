@@ -23,6 +23,7 @@ import type { DustAttractor } from '../dust-sim'
 import { FOG_GLSL, RENDER_ORDER, fogUniform, updateFog } from '../layer'
 import type { Layer, LayerCtx } from '../layer'
 import { damp } from '../springs'
+import { CENTER_R } from '../layout3d'
 import type { AgentState } from '../world'
 
 /** Pointer well masses (2D L1036) and ring (2D L1850-1857). */
@@ -157,7 +158,7 @@ export function createDustLayer(): Layer {
     cx: 0,
     cy: 0,
     cz: 0,
-    R: 135,
+    R: CENTER_R,
     agents: agentList as ArrayLike<DustAttractor>,
     ptrMass: 0,
     px: 0,

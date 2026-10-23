@@ -3,29 +3,24 @@
  * supernova. No three, no DOM: unit tested in web/tests/choreo.spec.ts. Every number is copied from the 2D view,
  * web/agent-network.ts (startLaunch/startNova/impact L609-629, stepFx L630-700, setStatus L814-828, intro
  * timeline L864). The 3D additions: directions are true 3D (uniform on the sphere), the comet follows the 3D
- * strand-0 Bezier, ripples at the impact and the blast are spherical shells.
+ * strand-0 Bezier, ripples at the impact are spherical shells.
  *
  * Side effects go through `ChoreoHooks` (the layer wires them to ctx.fx / ctx.world), so nothing here allocates
  * per frame; an effect allocates its small arrays once, when it starts.
  */
-import { LIVE, FINISHED, GREY, STATUS } from '../shared/status'
+import { LIVE, FINISHED, GREY, HALTED, STATUS } from '../shared/status'
 import type { AgentStatus } from '../shared/status'
 import type { RGB } from '../shared/palette'
 import { bez3 } from './links-sim'
 import { TAU, clamp } from './springs'
-import { LAUNCH, LAUNCH_CHARGE, LAUNCH_FLY, NOVA_AFTER, NOVA_CHARGE, lightenRGB, mixRGB } from './world'
+import { LAUNCH, LAUNCH_CHARGE, LAUNCH_FLY, NOVA_CHARGE, lightenRGB, mixRGB } from './world'
 import type { AgentState } from './world'
 
 export const WHITE: RGB = [255, 255, 255]
-/** 2D L600. */
-export const WARM: RGB = [255, 196, 140]
 /** Comet trail length in points (2D L661). */
 export const TRAIL_MAX = 44
-export const NOVA_RAYS = 18
-export const NOVA_CLUMPS = 26
 /** The launch effect lives until LAUNCH + 1 s (2.35 s total, 2D L669). */
 export const LAUNCH_TOTAL = LAUNCH + 1
-export const NOVA_TOTAL = NOVA_CHARGE + NOVA_AFTER
 
 export interface ChoreoHooks {
   ripple(x: number, y: number, z: number, r0: number, r1: number, life: number, col: RGB, width: number, shell: boolean): void
@@ -53,37 +48,13 @@ export interface ChoreoEnv {
   rand: () => number
 }
 
-export interface Ray {
-  dx: number
-  dy: number
-  dz: number
-  len: number
-  w: number
-}
-
-export interface Clump {
-  /** Unit start direction and the unit tangent it rotates toward (rotation about their cross product). */
-  dx: number
-  dy: number
-  dz: number
-  tx: number
-  ty: number
-  tz: number
-  dist: number
-  size: number
-  hot: boolean
-  dir: 1 | -1
-}
-
 export interface FxItem {
   kind: 'launch' | 'nova'
   a: AgentState
   t: number
   intro: boolean
   acc: number
-  fired: boolean
   arrived: boolean
-  blasted: boolean
   /** Comet head, 0..1 progress along the strand, and the trail (newest first, x y z). */
   hx: number
   hy: number
@@ -95,15 +66,12 @@ export interface FxItem {
   dx: number
   dy: number
   dz: number
-  rays: Ray[]
-  clumps: Clump[]
   /** Colours built once per effect (sparks keep references to them). */
   lc2: RGB
   lc25: RGB
   lc3: RGB
   lc4: RGB
   hot: RGB
-  cool: RGB
 }
 
 /** Uniform random unit vector into `out`. */
@@ -141,43 +109,7 @@ export function perpendicular(dx: number, dy: number, dz: number, az: number, ou
 
 export type StatusKind = 'launch' | 'nova' | 'change'
 
-/* --- nova flash (review M1): the white-out was too strong, so the numbers live here, testable --- */
-
-/** Fraction of min(viewport w, h), in screen px, that a flash sprite radius may reach (zoom must not blow it up). */
-export const FLASH_MAX_FRAC = 0.3
-/** Seconds the nova flash lasts after the charge (2D: 0.8). */
-export const NOVA_FLASH_S = 0.8
-
-export interface NovaFlash {
-  /** Remaining flash 0..1 (linear). */
-  q: number
-  /** Alpha of the near-white sprite at the agent. */
-  coreA: number
-  /** Its radius in world units, before the screen clamp. */
-  coreR: number
-  /** Alpha of the wide cool sprite. */
-  wideA: number
-}
-
-/** The first blast frames. Was: core alpha q^2, radius r*(6+10tb), wide alpha 0.35 q^2; now halved / 4+6tb / 0.12. */
-export function novaFlash(tb: number, agentR: number): NovaFlash | undefined {
-  if (tb < 0 || tb >= NOVA_FLASH_S) return undefined
-  const q = 1 - tb / NOVA_FLASH_S
-  const q2 = q * q
-  return { q, coreA: 0.5 * q2, coreR: agentR * (4 + 6 * tb), wideA: 0.12 * q2 }
-}
-
-/** Charge-phase white glow alpha (was e2 * 0.9). `e2` is (k / NOVA_CHARGE)^2. */
-export const novaChargeWhiteA = (e2: number): number => e2 * 0.5
-
-/** Cap a sprite radius (world units) so it covers at most `frac` of min(w, h) on screen. `pxPerUnit` is px per world unit at it. */
-export function clampSpriteRadius(worldR: number, pxPerUnit: number, w: number, h: number, frac = FLASH_MAX_FRAC): number {
-  if (!(pxPerUnit > 1e-9)) return worldR
-  return Math.min(worldR, (frac * Math.min(w, h)) / pxPerUnit)
-}
-
-/** Bloom multiplier while blast sprites are up: 1 at rest, down to 0.5 at a full flash. */
-export const novaBloomScale = (peakQ: number): number => 1 - 0.5 * Math.min(1, Math.max(0, peakQ))
+export const novaChargeWhiteA = (e2: number): number => e2 * 0.15
 
 /* --- paused view (review M3): queued status flips must not all replay on resume --- */
 
@@ -205,7 +137,6 @@ export function classifyStatus(prev: AgentStatus, next: AgentStatus): StatusKind
 export const isWake = (prev: AgentStatus, next: AgentStatus): boolean => STATUS[prev].power < 0.1 && STATUS[next].power > 0.1
 
 const tmp = [0, 0, 0]
-const tmp2 = [0, 0, 0]
 
 const makeFx = (kind: 'launch' | 'nova', a: AgentState, intro: boolean): FxItem => ({
   kind,
@@ -213,9 +144,7 @@ const makeFx = (kind: 'launch' | 'nova', a: AgentState, intro: boolean): FxItem 
   t: 0,
   intro,
   acc: 0,
-  fired: false,
   arrived: false,
-  blasted: false,
   hx: 0,
   hy: 0,
   hz: 0,
@@ -225,14 +154,11 @@ const makeFx = (kind: 'launch' | 'nova', a: AgentState, intro: boolean): FxItem 
   dx: 0,
   dy: 1,
   dz: 0,
-  rays: [],
-  clumps: [],
   lc2: lightenRGB(a.accent, 0.2),
   lc25: lightenRGB(a.accent, 0.25),
   lc3: lightenRGB(a.accent, 0.3),
   lc4: lightenRGB(a.accent, 0.4),
   hot: mixRGB(a.accent, WHITE, 0.5),
-  cool: mixRGB(a.accent, WHITE, 0.3),
 })
 
 /** Direction orb -> agent into fx.dx/dy/dz (2D `ang`, L637). */
@@ -279,27 +205,6 @@ export class Choreography {
   startNova(a: AgentState): FxItem | undefined {
     if (this.novaActive(a)) return undefined
     const f = makeFx('nova', a, false)
-    const r = this.rnd.bind(this)
-    for (let i = 0; i < NOVA_RAYS; i++) {
-      randomDir(this.rand, tmp)
-      f.rays.push({ dx: tmp[0], dy: tmp[1], dz: tmp[2], len: r(180, 460), w: r(1, 3.2) })
-    }
-    for (let i = 0; i < NOVA_CLUMPS; i++) {
-      randomDir(this.rand, tmp)
-      perpendicular(tmp[0], tmp[1], tmp[2], this.rand() * TAU, tmp2)
-      f.clumps.push({
-        dx: tmp[0],
-        dy: tmp[1],
-        dz: tmp[2],
-        tx: tmp2[0],
-        ty: tmp2[1],
-        tz: tmp2[2],
-        dist: r(120, 360),
-        size: r(14, 40),
-        hot: this.rand() < 0.4,
-        dir: this.rand() < 0.5 ? -1 : 1,
-      })
-    }
     this.list.push(f)
     return f
   }
@@ -323,6 +228,7 @@ export class Choreography {
       this.startNova(a)
       return kind
     }
+    if (HALTED.has(next)) return kind
     const h = this.hooks
     const wake = isWake(prev, next)
     const dot = STATUS[next].dot
@@ -380,6 +286,7 @@ export class Choreography {
     a.rest = FINISHED.has(status) ? 1 : 0
     a.novaS = 1
     a.novaL = 0
+    a.fade = HALTED.has(status) ? 0 : 1
     a.flash = 0
     a.hit = 0
     const g = 1 - clamp(a.power * 1.1)
@@ -453,11 +360,6 @@ export class Choreography {
     const rx = orb.x + f.dx * orb.r
     const ry = orb.y + f.dy * orb.r
     const rz = orb.z + f.dz * orb.r
-    if (!f.fired) {
-      f.fired = true
-      h.ripple(orb.x, orb.y, orb.z, orb.r * 0.98, orb.r + 300, 1.5, f.lc2, 4, true)
-      h.shockwave(orb.x, orb.y, orb.z, 45)
-    }
     if (k < LAUNCH_CHARGE) {
       const e = k / LAUNCH_CHARGE
       orb.flash = Math.max(orb.flash, 0.55 * e)
@@ -519,8 +421,8 @@ export class Choreography {
       const e = k / NOVA_CHARGE
       const e2 = e * e
       a.charging = true
-      a.novaS = 1 - 0.26 * e2 + Math.sin(k * 70) * 0.014 * e2 * env.motion
-      a.novaL = 0.2 + 1.4 * e2
+      a.novaS = 1 - 0.9 * e2
+      a.novaL = 0.3 * (0.2 + 1.4 * e2)
       f.acc += dt * (40 + 220 * e2)
       while (f.acc >= 1) {
         f.acc -= 1
@@ -528,31 +430,12 @@ export class Choreography {
         const d = a.r * this.rnd(1.8, 3.4)
         h.spark(a.x + tmp[0] * d, a.y + tmp[1] * d, a.z + tmp[2] * d, -tmp[0] * 280, -tmp[1] * 280, -tmp[2] * 280, this.rnd(0.3, 0.6), this.rnd(0.9, 1.8), this.rand() < 0.5 ? WHITE : f.lc4)
       }
-    } else if (!f.blasted) {
-      f.blasted = true
-      a.charging = false
-      a.novaS = 1.45
-      a.novaL = 2.4
-      a.flash = 1
-      a.hit = 1.4
-      h.shake(16)
-      h.shockwave(a.x, a.y, a.z, 210)
-      h.ripple(a.x, a.y, a.z, a.r * 0.6, a.r + 520, 2.6, WHITE, 7, true)
-      h.ripple(a.x, a.y, a.z, a.r * 0.8, a.r + 360, 2.0, f.lc3, 4, true)
-      h.ripple(a.x, a.y, a.z, a.r, a.r + 220, 1.4, WARM, 3, true)
-      for (let n = 0; n < 120; n++) {
-        randomDir(this.rand, tmp)
-        const sp = Math.pow(this.rand(), 0.6) * 560 + 60
-        const col = n % 4 === 0 ? WHITE : n % 4 === 1 ? WARM : f.lc3
-        const o = a.r * 0.5
-        h.spark(a.x + tmp[0] * o, a.y + tmp[1] * o, a.z + tmp[2] * o, tmp[0] * sp, tmp[1] * sp, tmp[2] * sp, this.rnd(0.9, 2.4), this.rnd(1, 3), col)
-      }
+      return false
     }
-    if (k >= NOVA_TOTAL) {
-      a.charging = false
-      return true
-    }
-    return false
+    a.charging = false
+    a.novaS = 1
+    a.novaL = 0
+    return true
   }
 }
 
@@ -573,15 +456,3 @@ export const launchRimFade = (k: number): number => clamp(1 - (k - LAUNCH_CHARGE
 
 /** Impact afterglow q = clamp(1 - tb / 0.9) (2D L730). */
 export const afterglowQ = (tb: number): number => clamp(1 - tb / 0.9)
-
-/** Nova ray fade: kr = clamp(tb / 1.6), alpha pow(1 - kr, 1.5) * 0.8 (2D L764-765). */
-export const rayAlpha = (tb: number): number => Math.pow(1 - clamp(tb / 1.6), 1.5) * 0.8
-
-/** Rotate unit d toward its tangent t by angle th (rotation about d x t). */
-export function rotateClump(c: Clump, th: number, out: number[]): void {
-  const cs = Math.cos(th)
-  const sn = Math.sin(th)
-  out[0] = c.dx * cs + c.tx * sn
-  out[1] = c.dy * cs + c.ty * sn
-  out[2] = c.dz * cs + c.tz * sn
-}

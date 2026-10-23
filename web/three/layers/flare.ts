@@ -32,6 +32,7 @@ import { RENDER_ORDER } from '../layer'
 import type { Layer, LayerCtx } from '../layer'
 import { clamp, lerp } from '../springs'
 import { lightenRGB } from '../world'
+import { CENTER_R } from '../layout3d'
 
 /** Instance floats: p0.xyz + width | p1.xyz + glow radius | hue, lighten, core alpha, glow alpha | rgb override + pad. */
 const STRIDE = 16
@@ -192,7 +193,7 @@ export function createFlareLayer(): Layer {
   }
 
   const env: FlareEnv = {
-    R: 135,
+    R: CENTER_R,
     motion: 1,
     active: 0,
     spawn: 0,

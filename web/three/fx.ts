@@ -37,7 +37,7 @@ export interface Ripple {
   max: number
   col: RGB
   w: number
-  /** 3D addition: drawn as a spherical shell (nova / launch) instead of a camera-facing ring. */
+  /** 3D addition: drawn as a spherical shell (launch) instead of a camera-facing ring. */
   shell: boolean
 }
 
