@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eagle Eye</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #03040f; overflow: hidden; }
+  .view {
+    position: fixed; inset: 0;
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity 200ms ease-out, visibility 0s linear 200ms;
+  }
+  .view.active {
+    opacity: 1; visibility: visible; pointer-events: auto;
+    transition: opacity 200ms ease-out, visibility 0s;
+  }
+  .badge {
+    position: fixed; top: 14px; left: 16px; z-index: 1;
+    font: 500 12px/1 Inter, "Segoe UI", system-ui, sans-serif; letter-spacing: .02em;
+    color: #8a93b8; padding: 7px 10px 7px 22px; border-radius: 999px;
+    background: rgba(10, 14, 40, .55); border: 1px solid rgba(120, 140, 220, .18);
+  }
+  .badge::before {
+    content: ""; position: absolute; left: 10px; top: 50%; width: 6px; height: 6px; margin-top: -3px;
+    border-radius: 50%; background: #707898;
+  }
+  .badge.live::before { background: #2eff96; box-shadow: 0 0 8px #2eff96; }
+
+  .tabs {
+    position: fixed; top: 14px; right: 16px; z-index: 2;
+    display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 999px;
+    font: 500 12px/1 Inter, "Segoe UI", system-ui, sans-serif; letter-spacing: .02em;
+    background: rgba(10, 14, 40, .55); border: 1px solid rgba(120, 140, 220, .18);
+  }
+  .thumb {
+    position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 2);
+    border-radius: 999px; pointer-events: none;
+    background: rgba(120, 140, 220, .2); box-shadow: inset 0 0 0 1px rgba(120, 140, 220, .22);
+    transform: translateX(0);
+  }
+  .tabs.is-3d .thumb { transform: translateX(100%); }
+  .tabs.ready .thumb { transition: transform 220ms cubic-bezier(0.23, 1, 0.32, 1); }
+  .tab {
+    position: relative; min-width: 44px; padding: 7px 12px; border: 0; border-radius: 999px;
+    font: inherit; letter-spacing: inherit; color: #8a93b8; background: none; cursor: pointer;
+    transition: color 120ms ease-out, transform 120ms ease-out;
+  }
+  .tab:active { transform: scale(.97); }
+  .tab[aria-selected="true"] { color: #e8ecff; }
+  .tab[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+  .tab[aria-disabled="true"]:active { transform: none; }
+  .tab:focus-visible { outline: 2px solid rgba(140, 170, 255, .7); outline-offset: 1px; }
+  @media (hover: hover) { .tab:hover:not([aria-selected="true"]):not([aria-disabled="true"]) { color: #c4cbea; } }
+
+  .notice {
+    position: fixed; top: 52px; right: 16px; z-index: 2; max-width: calc(100vw - 32px);
+    font: 500 12px/1 Inter, "Segoe UI", system-ui, sans-serif; letter-spacing: .02em;
+    color: #8a93b8; padding: 7px 12px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    background: rgba(10, 14, 40, .55); border: 1px solid rgba(120, 140, 220, .18);
+    opacity: 0; visibility: hidden; transition: opacity 200ms ease-out, visibility 0s linear 200ms;
+  }
+  .notice.show { opacity: 1; visibility: visible; transition: opacity 200ms ease-out, visibility 0s; }
+
+  /* ===== 3D label overlay (web/three/layers/labels.ts) ===== */
+  /* Callout cards (Addendum A.7). Metrics must match CARD in web/three/labels-logic.ts: pad 9/12, name line 20, rows 19,
+     full height 95, compact 57, radius 10. The root only carries a transform (an opacity < 1 ancestor would become the
+     backdrop root and kill the blur); opacity is written on .ee3d-bg, .ee3d-edge and the text rows. */
+  .ee3d-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 2; font-family: Inter, "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif; }
+  .ee3d-leads { position: absolute; inset: 0; }
+  .ee3d-lead { position: absolute; left: 0; top: -3px; overflow: visible; transform-origin: 0 3px; will-change: transform, opacity; opacity: 0; }
+  .ee3d-lead line { stroke: rgb(var(--ac)); stroke-width: 1.1; stroke-linecap: round; }
+  .ee3d-ldot { position: absolute; left: -2.5px; top: -2.5px; width: 5px; height: 5px; border-radius: 50%; background: rgb(var(--ac)); box-shadow: 0 0 6px rgba(var(--ac), .9); will-change: transform, opacity; opacity: 0; }
+  .ee3d-lab { position: absolute; left: 0; top: 0; width: var(--w, 132px); height: 95px; transform-origin: 0 0; will-change: transform; contain: layout style; }
+  .ee3d-clip { position: absolute; left: 0; top: 0; width: 100%; height: 95px; overflow: hidden; border-radius: 10px; will-change: transform; }
+  .ee3d-bg { position: absolute; left: 0; top: 0; width: 100%; height: 95px; box-sizing: border-box; border-radius: 10px; background: rgba(8, 12, 32, .72); border: 1px solid rgba(var(--ac), .35); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); will-change: transform, opacity; opacity: 0; }
+  .ee3d-edge { position: absolute; left: 0; top: 0; width: 100%; height: 12px; box-sizing: border-box; border: 1px solid rgba(var(--ac), .35); border-top: 0; border-radius: 0 0 10px 10px; box-shadow: 0 9px 14px -8px rgba(0, 0, 0, .55); will-change: transform, opacity; opacity: 0; }
+  .ee3d-it { position: absolute; left: 12px; right: 12px; white-space: nowrap; will-change: opacity; opacity: 0; }
+  .ee3d-name { overflow: hidden; text-overflow: ellipsis; top: 9px; height: 20px; line-height: 20px; font-size: 15px; font-weight: 600; letter-spacing: .005em; }
+  .ee3d-row { display: flex; align-items: center; height: 19px; line-height: 19px; font-size: 13px; font-weight: 500; }
+  .ee3d-srow { top: 29px; }
+  .ee3d-r3 { top: 48px; will-change: transform, opacity; }
+  .ee3d-r4 { top: 67px; will-change: transform, opacity; }
+  .ee3d-stat { font-weight: 400; }
+  .ee3d-u { margin-left: .3em; color: rgb(170, 180, 215); }
+  .ee3d-dw, .ee3d-iw { position: relative; flex: none; height: 19px; width: 20px; }
+  .ee3d-dw i { position: absolute; left: 6px; top: 50%; border-radius: 50%; transform: translate(-50%, -50%); }
+  .ee3d-ring { width: 8px; height: 8px; background: rgb(var(--dot)); opacity: 0; }
+  .ee3d-glow { width: 18px; height: 18px; background: radial-gradient(circle, rgba(var(--dot), 1) 0, rgba(var(--dot), 0) 70%); }
+  .ee3d-dot { width: 8px; height: 8px; background: rgb(var(--dot)); }
+  .ee3d-iw svg { position: absolute; left: 6px; top: 50%; margin: -7.5px 0 0 -7.5px; opacity: .95; }
+  .ee3d-model { position: absolute; left: 0; top: 0; translate: -50% 0; transform-origin: 0 0; white-space: nowrap; height: 30px; line-height: 30px; font-size: 26px; font-weight: 400; color: rgb(150, 190, 255); will-change: transform, opacity; opacity: 0; }
+  .ee3d-tip { position: absolute; left: 0; top: 0; width: 204px; height: 98px; box-sizing: border-box; padding: 10px 12px; border-radius: 10px; color: #cdd6f5; font-size: 12px; line-height: 18px; white-space: nowrap; opacity: 0; transition: opacity 140ms ease-out; background: rgba(10, 14, 40, .82); border: 1px solid rgba(120, 140, 220, .22); }
+  .ee3d-tip b { display: block; font-size: 14px; font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; }
+  .ee3d-tip .s, .ee3d-tip .k { display: block; }
+  .ee3d-tip .s i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .ee3d-tip em { font-style: normal; color: #fff; margin-left: 4px; }
+  .ee3d-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
+  /* ===== end 3D label overlay ===== */
+
+  @media (prefers-reduced-motion: reduce) {
+    .view, .view.active, .notice, .notice.show { transition: none; }
+    .tabs.ready .thumb, .tab { transition: none; }
+    .tab:active { transform: none; }
+  }
+</style>
+</head>
+<body>
+<div id="network" class="view active"></div>
+<div id="network3d" class="view"></div>
+<div id="badge" class="badge">Eagle Eye · connecting…</div>
+<div id="tabs" class="tabs" role="tablist" aria-label="View">
+  <span class="thumb" aria-hidden="true"></span>
+  <button type="button" id="tab-2d" class="tab" role="tab" aria-selected="true" aria-controls="network" data-view="2d" tabindex="0">2D</button>
+  <button type="button" id="tab-3d" class="tab" role="tab" aria-selected="false" aria-controls="network3d" data-view="3d" tabindex="-1">3D</button>
+</div>
+<div id="notice" class="notice" role="status" aria-live="polite"></div>
+<script src="eagle-eye.js"></script>
+<script src="state.js"></script>
+</body>
+</html>

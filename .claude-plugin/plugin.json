@@ -1,0 +1,6 @@
+{
+  "name": "agents-eagle-eye",
+  "version": "0.1.0",
+  "description": "Animated constellation of the main agent and every subagent: status, context window and run time",
+  "types": "./types/index.d.ts"
+}

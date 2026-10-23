@@ -1,0 +1,24 @@
+{
+  "name": "agents-eagle-eye-web",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Build tooling for the Eagle Eye browser page (web/).",
+  "scripts": {
+    "build:2d": "cd web && bun build bridge.ts --format=iife --target=browser --outfile=eagle-eye.js",
+    "build:3d": "cd web && bun build three/entry.ts --format=iife --target=browser --minify --define process.env.NODE_ENV='\"production\"' --outfile=eagle-eye-3d.js",
+    "build": "bun run build:2d && bun run build:3d",
+    "typecheck": "tsc -p tsconfig.web.json",
+    "test": "bun test web/tests",
+    "dev": "node scripts/dev-server.mjs",
+    "check:bundle": "node scripts/check-bundle.mjs",
+    "verify": "bun run typecheck && bun run test && bun run build && bun run check:bundle"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@types/three": "0.186.0",
+    "typescript": "7.0.2"
+  }
+}
