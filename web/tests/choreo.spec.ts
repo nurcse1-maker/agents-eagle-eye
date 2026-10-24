@@ -112,7 +112,7 @@ test('addAgent spawns after LAUNCH and launches at once', () => {
   expect(ch.list.length).toBe(1)
 })
 
-test('launch timeline: charge 0.55, fly 0.8 (u^1.6), impact at 1.35, gone at 2.35', () => {
+test('launch timeline: charge 0.55, fly 0.8 (u^1.6), no impact blast for intro, gone at 2.35', () => {
   const { ch, log, env } = setup()
   const a = mk(0)
   a.launched = true
@@ -133,13 +133,12 @@ test('launch timeline: charge 0.55, fly 0.8 (u^1.6), impact at 1.35, gone at 2.3
   expect(log.pulses.length).toBe(0)
   run(ch, a, env, 0.95, 1.36)
   expect(a.launchGrow).toBe(1)
-  expect(log.pulses).toEqual([{ id: a.id, n: 14 }])
-  expect(log.shocks).toEqual([60])
-  expect(log.shakes).toEqual([5])
-  expect(log.ripples.length).toBe(3)
-  expect(log.ripples.every(r => r.shell)).toBe(true)
-  expect(a.flash).toBe(1)
-  expect(a.hit).toBe(1.4)
+  expect(log.pulses).toEqual([])
+  expect(log.shocks).toEqual([])
+  expect(log.shakes).toEqual([])
+  expect(log.ripples.length).toBe(0)
+  expect(a.flash).toBe(0)
+  expect(a.hit).toBe(0)
   expect(ch.list.length).toBe(1)
   run(ch, a, env, 1.36, LAUNCH_TOTAL + 0.05)
   expect(ch.list.length).toBe(0)

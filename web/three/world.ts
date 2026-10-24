@@ -141,7 +141,6 @@ export interface OrbState {
   flash: number
   press: number
   beat: number
-  pulseT: number
   shimmerT: number
   /** Number of live agents; drives heartbeat rate (set by the node/status code). */
   activeCount: number
@@ -163,7 +162,6 @@ export const makeOrbState = (): OrbState => ({
   flash: 0,
   press: 0,
   beat: 0,
-  pulseT: 0.8,
   shimmerT: 0,
   activeCount: 0,
   model: '',

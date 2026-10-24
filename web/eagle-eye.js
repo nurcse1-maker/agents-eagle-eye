@@ -351,7 +351,6 @@
       feed: 0,
       beat: 0,
       press: 0,
-      pulseT: 0.8,
       shimmerT: 0,
       flash: 0
     };
@@ -618,7 +617,8 @@
               f.arrived = true;
               if (f.intro)
                 a.launchGrow = 1;
-              impact(a);
+              else
+                impact(a);
             }
             f.trail.length = Math.max(0, f.trail.length - 6);
           }
@@ -751,7 +751,7 @@
     }
     function update(dt) {
       const time = t;
-      center.spawn.target = time > 0.05 && agents.some((a) => !FINISHED.has(a.spec.status)) ? 1 : 0;
+      center.spawn.target = time > 0.05 ? 1 : 0;
       center.spawn.step(dt);
       let ctx0 = 0, cty0 = 0;
       if (ptr.active) {
@@ -769,14 +769,6 @@
       center.feed = damp(center.feed, 0, 2.2, dt);
       center.flash = damp(center.flash, 0, 3, dt);
       center.press = damp(center.press, ptr.down && ptr.target === "center" ? 1 : 0, 12, dt);
-      const active = agents.reduce((n, a) => n + (a.power > 0.3 ? 1 : 0), 0);
-      const bpm = 0.55 + active * 0.04;
-      center.beat = Math.pow(Math.max(0, Math.sin(time * TAU * bpm)), 8);
-      center.pulseT -= dt;
-      if (center.pulseT <= 0) {
-        center.pulseT = 2.4 - Math.min(1.2, active * 0.1);
-        addRipple(center.x, center.y, CENTER_R * 0.98, CENTER_R + 170 * ORB_SCALE, [110, 150, 255], 2.4, 3);
-      }
       center.shimmerT += dt;
       for (const a of agents) {
         const cfg = STATUS[a.spec.status];

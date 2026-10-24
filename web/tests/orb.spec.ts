@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { discOrbitPos, HALO_CAP, HALO_INNER, haloAlpha, MAIN_GLOW_CAP, mainGlowAlpha, softClip, orbBeat, orbBpm, orbitPos, ORB_YAW_SPEED, orbScale, pulseInterval, satelliteSpeed, tiltDisc } from '../three/layers/orb'
+import { discOrbitPos, HALO_CAP, HALO_INNER, haloAlpha, MAIN_GLOW_CAP, mainGlowAlpha, softClip, orbBeat, orbBpm, orbitPos, ORB_YAW_SPEED, orbScale, satelliteSpeed, tiltDisc } from '../three/layers/orb'
 
 test('bpm rises with active agents', () => {
   expect(orbBpm(0)).toBeCloseTo(0.55)
@@ -11,12 +11,6 @@ test('beat is a sharp pulse in 0..1', () => {
   expect(orbBeat(0.25, 1)).toBeCloseTo(1)
   expect(orbBeat(0.75, 1)).toBe(0)
   expect(orbBeat(0.125, 1)).toBeLessThan(0.1)
-})
-
-test('pulse interval shrinks to a floor of 1.2 s', () => {
-  expect(pulseInterval(0)).toBeCloseTo(2.4)
-  expect(pulseInterval(5)).toBeCloseTo(1.9)
-  expect(pulseInterval(50)).toBeCloseTo(1.2)
 })
 
 test('satellite speeds match 2D', () => {

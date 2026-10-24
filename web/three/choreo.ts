@@ -405,7 +405,7 @@ export class Choreography {
       if (!f.arrived) {
         f.arrived = true
         if (f.intro) a.launchGrow = 1
-        this.impact(f)
+        else this.impact(f)
       }
       f.trailN = Math.max(0, f.trailN - 6)
     }

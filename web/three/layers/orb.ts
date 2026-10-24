@@ -26,7 +26,6 @@ import {
   Vector3,
 } from 'three'
 import type { RGB } from '../../shared/palette'
-import { FINISHED } from '../../shared/status'
 import { RENDER_ORDER } from '../layer'
 import type { Layer, LayerCtx } from '../layer'
 import { CENTER_R, ORB_SCALE } from '../layout3d'
@@ -41,8 +40,6 @@ const R = CENTER_R // 2D CENTER_R, L72
 export const orbBpm = (active: number) => 0.55 + active * 0.04
 /** Heartbeat envelope (2D L853). */
 export const orbBeat = (time: number, bpm: number) => Math.pow(Math.max(0, Math.sin(time * TAU * bpm)), 8)
-/** Seconds between pulse ripples (2D L856). */
-export const pulseInterval = (active: number) => 2.4 - Math.min(1.2, active * 0.1)
 /** Satellite angular speed (2D L1790). */
 export const satelliteSpeed = (i: number) => 0.55 / Math.pow(1 + i * 0.35, 1.5)
 /** Orb body scale (2D L1728). */
@@ -628,7 +625,6 @@ export function createOrbLayer(): OrbLayer {
       disposers.push(world.on('orbClick', () => layer.pulse()))
       disposers.push(
         world.on('reset', () => {
-          world.orb.pulseT = 0.8
           for (const s of shells) {
             s.on = false
             s.mesh.visible = false
@@ -752,8 +748,7 @@ export function createOrbLayer(): OrbLayer {
       const time = world.time
 
       // spawn pop and pointer parallax (2D L835-846)
-      const anyLive = [...world.agents.values()].some((a) => !FINISHED.has(a.spec.status))
-      o.spawn.target = time > 0.05 && anyLive ? 1 : 0
+      o.spawn.target = time > 0.05 ? 1 : 0
       o.spawn.step(dt)
       let tx = 0
       let ty = 0
@@ -779,16 +774,6 @@ export function createOrbLayer(): OrbLayer {
       let active = 0
       for (const a of world.agents.values()) if (a.power > 0.3) active++
       o.activeCount = active
-      o.beat = orbBeat(time, orbBpm(active))
-      o.pulseT -= dt
-      if (o.pulseT <= 0) {
-        o.pulseT = pulseInterval(active)
-        tmp.x = o.x
-        tmp.y = o.y
-        tmp.z = o.z
-        fx.ripple({ pos: tmp, r0: R * 0.98, r1: R + 170 * ORB_SCALE, life: 2.4, color: [110, 150, 255], width: 3 }) // L858
-        spawnShell(R * 0.98, R + 170 * ORB_SCALE, 2.4, [110, 150, 255])
-      }
       o.shimmerT += dt
       // surface yaw scales with motion (reduced motion: slower, not jumpier)
       yaw = (yaw + ORB_YAW_SPEED * uniforms.motion.value * dt) % TAU
