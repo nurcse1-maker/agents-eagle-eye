@@ -3,12 +3,12 @@
  *
  * Layers, back to front (everything additive except the glass body):
  *   main glow 2.3R, back halos / satellites, glass sphere body (fresnel + surface particle network, writes depth),
- *   lat/long grid shell, disc halo rings, conic rim ring, tick ring, shell pulses, front halos / satellites.
+ *   lat/long grid shell, conic rim ring, tick ring, shell pulses, front halos / satellites.
  *   Halos and satellites orbit near the disc plane, so each frame they are split into "behind the sphere"
  *   and "in front of it" by changing their renderOrder.
  *
  * Addendum A.5/A.8: the body and grid yaw slowly about world Y (ORB_YAW_SPEED * motion); the body writes depth so the
- * planets (depth tested, drawn later) behind the orb are hidden by it, and the grid shell and disc rings are depth
+ * planets (depth tested, drawn later) behind the orb are hidden by it, and the grid shell is depth
  * tested against it (only their front halves show over the sphere). Rim and tick ring stay camera-facing.
  */
 import {
@@ -117,12 +117,6 @@ const HALO_INC = [0.1, -0.16, 0.22, -0.08]
 const HALO_NODE = [0, 1.1, 2.2, 3.3]
 const SAT_INC = [0.12, 0.26, -0.18, 0.34]
 const SAT_NODE = [0.5, 1.9, 3.1, 4.4]
-/** Thin halo rings lying near the disc plane around the orb: radius offset from R, inclination, node, colour, alpha. */
-const DISC_RINGS: { dr: number; inc: number; node: number; col: RGB; a: number; dashes: number; speed: number }[] = [
-  { dr: 34, inc: 0.05, node: 0.4, col: [110, 160, 255], a: 0.42, dashes: 0, speed: 0 },
-  { dr: 62, inc: -0.11, node: 1.7, col: [170, 120, 255], a: 0.34, dashes: 64, speed: 0.045 },
-  { dr: 96, inc: 0.16, node: 3.0, col: [90, 220, 255], a: 0.26, dashes: 120, speed: -0.03 },
-]
 const GRID_SHELL = 1.025 // lat/long wireframe shell radius / R
 const TICKS = 90 // 2D L1773
 const SHELLS = 3
@@ -276,47 +270,6 @@ void main() {
 }
 `
 
-// Thin halo rings near the disc plane (Addendum A.5): one quad per ring baked in orb-local world px, one draw call.
-const DISC_RING_VERT = /* glsl */ `
-attribute vec2 aUV;
-attribute vec4 aRing; // radius, dash count, dash speed, alpha
-attribute vec3 aCol;
-varying vec2 vUV;
-varying vec4 vRing;
-varying vec3 vCol;
-void main() {
-  vUV = aUV;
-  vRing = aRing;
-  vCol = aCol;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}
-`
-const DISC_RING_FRAG = /* glsl */ `
-precision highp float;
-varying vec2 vUV;
-varying vec4 vRing;
-varying vec3 vCol;
-uniform float uTime;
-uniform float uMotion;
-uniform float uAlpha;
-const float PI2 = 6.283185307;
-void main() {
-  float d = length(vUV);
-  float off = abs(d - vRing.x);
-  if (off > ${(8 * ORB_SCALE).toFixed(2)}) discard;
-  float aa = fwidth(d);
-  float hw = max(0.8, aa * 0.6);
-  float line = 1.0 - smoothstep(hw, hw + aa * 1.5, off);
-  float glow = (1.0 - smoothstep(0.0, ${(7 * ORB_SCALE).toFixed(2)}, off)) * 0.18;
-  float m = 1.0;
-  if (vRing.y > 0.5) {
-    float u = fract(atan(vUV.y, vUV.x) / PI2 * vRing.y - uTime * vRing.z * uMotion * vRing.y);
-    m = 1.0 - smoothstep(0.28, 0.36, abs(u - 0.5));
-  }
-  gl_FragColor = vec4(vCol * (line * m + glow) * vRing.w * uAlpha, 1.0);
-}
-`
-
 const RIM_FRAG = /* glsl */ `
 precision highp float;
 varying vec2 vP;
@@ -429,8 +382,6 @@ export function createOrbLayer(): OrbLayer {
   let bodyMat: ShaderMaterial
   let gridMesh: Mesh
   let gridMat: ShaderMaterial
-  let ringMesh: Mesh
-  let ringMat: ShaderMaterial
   let yaw = 0
   let rimMesh: Mesh
   let rimMat: ShaderMaterial
@@ -530,52 +481,6 @@ export function createOrbLayer(): OrbLayer {
       gridMesh.renderOrder = O + 0.5
       gridMesh.frustumCulled = false
       meshes.push(gridMesh)
-
-      // disc halo rings: quads baked in orb-local world px on their tilted planes
-      const nR = DISC_RINGS.length
-      const rPos = new Float32Array(nR * 4 * 3)
-      const rUV = new Float32Array(nR * 4 * 2)
-      const rRing = new Float32Array(nR * 4 * 4)
-      const rCol = new Float32Array(nR * 4 * 3)
-      const rIdx: number[] = []
-      const corner = [-1, -1, 1, -1, 1, 1, -1, 1]
-      for (let i = 0; i < nR; i++) {
-        const dr = DISC_RINGS[i]
-        const rad = R + dr.dr * ORB_SCALE
-        const half = rad + 10
-        for (let c = 0; c < 4; c++) {
-          const v = i * 4 + c
-          const u = corner[c * 2] * half
-          const w = corner[c * 2 + 1] * half
-          tiltDisc(tmp, u, w, dr.inc, dr.node)
-          rPos.set([tmp.x, tmp.y, tmp.z], v * 3)
-          rUV.set([u, w], v * 2)
-          rRing.set([rad, dr.dashes, dr.speed, dr.a], v * 4)
-          rCol.set([dr.col[0] / 255, dr.col[1] / 255, dr.col[2] / 255], v * 3)
-        }
-        const b = i * 4
-        rIdx.push(b, b + 1, b + 2, b, b + 2, b + 3)
-      }
-      const rg = new BufferGeometry()
-      rg.setAttribute('position', new Float32BufferAttribute(rPos, 3))
-      rg.setAttribute('aUV', new Float32BufferAttribute(rUV, 2))
-      rg.setAttribute('aRing', new Float32BufferAttribute(rRing, 4))
-      rg.setAttribute('aCol', new Float32BufferAttribute(rCol, 3))
-      rg.setIndex(rIdx)
-      geos.push(rg)
-      ringMat = new ShaderMaterial({
-        vertexShader: DISC_RING_VERT,
-        fragmentShader: DISC_RING_FRAG,
-        uniforms: { uTime: ctx.uniforms.time, uMotion: ctx.uniforms.motion, uAlpha: { value: 1 } },
-        ...ADD,
-        depthTest: true,
-        side: DoubleSide,
-      })
-      mats.push(ringMat)
-      ringMesh = new Mesh(rg, ringMat)
-      ringMesh.renderOrder = O + 4
-      ringMesh.frustumCulled = false
-      meshes.push(ringMesh)
 
       rimMat = new ShaderMaterial({ vertexShader: QUAD_VERT, fragmentShader: RIM_FRAG, uniforms: { uQ: { value: R + 24 * ORB_SCALE }, uRot: { value: 0 }, uBeat: { value: 0 } }, ...ADD })
       mats.push(rimMat)
@@ -866,9 +771,6 @@ export function createOrbLayer(): OrbLayer {
       gridMesh.scale.setScalar(R * GRID_SHELL * sc)
       gridMesh.rotation.y = yaw
       gridMat.uniforms.uBeat.value = beat
-      ringMesh.position.copy(orbPos)
-      ringMesh.scale.setScalar(sc)
-      ringMat.uniforms.uAlpha.value = clamp(0.85 + beat * 0.25 + o.feed * 0.3, 0, 1.4)
       rimMesh.position.copy(orbPos)
       rimMesh.quaternion.copy(cam.quaternion)
       rimMesh.scale.setScalar((R + 24 * ORB_SCALE) * sc)
